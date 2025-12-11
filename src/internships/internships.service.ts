@@ -93,9 +93,31 @@ export class InternshipsService {
     return internship;
   }
 
+  async getInternshipTopics(page: number, limit: number){
+    const { page: p, limit: l } = parsePaginationQuery({
+      page,
+      limit,
+      maxLimit: 50,
+    });
+    const skip = (p - 1) * l;
+
+    const [data, total] = await Promise.all([
+      this.prisma.internship_topics.findMany({
+        skip,
+        take: l,
+        orderBy: { created_at: 'desc' },
+        include: {
+          lecturers: true,
+        },
+      }),
+      this.prisma.internship_topics.count(),
+    ]);
+
+    return buildPaginationResponse(data, total, p, l);
+  }
   // ====================== LECTURER ======================
 
-  async getSupervisedStudents(lecturerId: string) {
+  async getSupervisedStudents(lecturerId: string, page: number, limit: number) {
     return this.prisma.internships.findMany({
       where: { lecturer_id: BigInt(lecturerId) },
       include: { students: true },
@@ -218,7 +240,6 @@ export class InternshipsService {
       return buildPaginationResponse([], total, p, l);
     }
 
-    // Lấy tất cả internship thuộc các kỳ này
     const termIds = terms.map((t) => t.id);
 
     const internships = await this.prisma.internships.findMany({

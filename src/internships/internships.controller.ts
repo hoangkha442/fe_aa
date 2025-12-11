@@ -37,12 +37,47 @@ export class InternshipsController {
     return this.service.getMyProgress(req.user.userId)
   }
 
+  @Get('student/internship-topics')
+  @Roles('student')
+   @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    example: 1,
+    description: 'Trang (bắt đầu từ 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    example: 10,
+    description: 'Số bản ghi mỗi trang',
+  })
+  getInternshipTopics(@Query('page') page?: any, @Query('limit') limit?: any){
+    return this.service.getInternshipTopics(page, limit)
+  }
+  
+
   // ====================== LECTURER ======================
 
   @Get('lecturer/students')
   @Roles('lecturer')
-  supervised(@Req() req: any) {
-    return this.service.getSupervisedStudents(req.user.userId)
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    example: 1,
+    description: 'Trang (bắt đầu từ 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    example: 10,
+    description: 'Số bản ghi mỗi trang',
+  })
+  supervised(@Req() req: any, @Query('page') page?: any, @Query('limit') limit?: any) {
+    return this.service.getSupervisedStudents(req.user.userId,page, limit)
   }
 
   @Patch('status/:id')
