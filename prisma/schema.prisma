@@ -83,6 +83,7 @@ model internship_topics {
   company_name           String?                   @db.VarChar(255)
   company_address        String?                   @db.VarChar(255)
   created_by_lecturer_id BigInt?                   @db.UnsignedBigInt
+  term_id                BigInt?                   @db.UnsignedBigInt
   created_at             DateTime?                 @default(now()) @db.Timestamp(0)
   max_students           Int?                      @default(3) @db.UnsignedTinyInt
   current_students       Int?                      @default(0) @db.UnsignedTinyInt

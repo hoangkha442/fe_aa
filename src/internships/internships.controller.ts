@@ -1,14 +1,28 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common'
-import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger'
-import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard'
-import { RolesGuard } from 'src/auth/roles/roles.guard'
-import { Roles } from 'src/auth/roles/roles.decorator'
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/auth/roles/roles.guard';
+import { Roles } from 'src/auth/roles/roles.decorator';
 
-import { InternshipsService } from './internships.service'
-import { RegisterInternshipDto } from './dto/register-internship.dto'
-import { UpdateInternshipStatusDto } from './dto/update-internship-status.dto'
-import { CreateTermDto } from './dto/create-term.dto'
-import { CreateTopicDto } from './dto/create-topic.dto'
+import { InternshipsService } from './internships.service';
+
+import { CreateTermDto } from './dto/create-term.dto';
+import { CreateTopicDto } from './dto/create-topic.dto';
+import { UpdateInternshipStatusDto } from './dto/update-internship-status.dto';
+
+import { CreateTopicRegistrationDto } from './dto/create-topic-registration.dto';
+import { ApproveRegistrationDto } from './dto/approve-registratio.dto';
+import { RejectRegistrationDto } from './dto/reject-registratio.dto';
 
 @ApiTags('Internships')
 @ApiBearerAuth()
@@ -19,71 +33,116 @@ export class InternshipsController {
 
   // ====================== STUDENT ======================
 
-  @Post('register')
+  @Get('student/internship-topics')
   @Roles('student')
-  register(@Req() req: any, @Body() dto: RegisterInternshipDto) {
-    return this.service.registerInternship(req.user.userId, dto)
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  getInternshipTopics(@Query('page') page?: any, @Query('limit') limit?: any) {
+    return this.service.getInternshipTopics(page, limit);
   }
 
-  @Get('my')
+  @Post('topic-registrations')
   @Roles('student')
-  getMyInternship(@Req() req: any) {
-    return this.service.getMyInternship(req.user.userId)
+  registerTopic(@Req() req: any, @Body() dto: CreateTopicRegistrationDto) {
+    // userId là users.id (đã lấy từ JWT)
+    return this.service.createTopicRegistration(req.user.userId, dto);
   }
 
   @Get('my-progress')
   @Roles('student')
   myProgress(@Req() req: any) {
-    return this.service.getMyProgress(req.user.userId)
+    return this.service.getMyProgress(req.user.userId);
   }
 
-  @Get('student/internship-topics')
+  @Get('student/my-topic-registration')
   @Roles('student')
-   @ApiQuery({
-    name: 'page',
-    required: false,
-    type: Number,
-    example: 1,
-    description: 'Trang (bắt đầu từ 1)',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    example: 10,
-    description: 'Số bản ghi mỗi trang',
-  })
-  getInternshipTopics(@Query('page') page?: any, @Query('limit') limit?: any){
-    return this.service.getInternshipTopics(page, limit)
+  getMyTopicRegistration(@Req() req: any) {
+    return this.service.getMyTopicRegistration(req.user.userId);
   }
-  
+
+  @Get('my')
+  @Roles('student')
+  getMyInternship(@Req() req: any) {
+    return this.service.getMyInternship(req.user.userId);
+  }
 
   // ====================== LECTURER ======================
 
+  // @Get('lecturer/students')
+  // @Roles('lecturer')
+  // @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  // @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  // getSupervisedStudents(
+  //   @Req() req: any,
+  //   @Query('page') page?: any,
+  //   @Query('limit') limit?: any,
+  // ) {
+  //   return this.service.getSupervisedStudents(req.user.userId, page, limit);
+  // }
+
   @Get('lecturer/students')
   @Roles('lecturer')
+  @ApiQuery({ name: 'term_id', required: false, type: Number })
   @ApiQuery({
-    name: 'page',
+    name: 'status',
     required: false,
-    type: Number,
-    example: 1,
-    description: 'Trang (bắt đầu từ 1)',
+    enum: ['registered', 'in_progress', 'completed', 'dropped'],
   })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    example: 10,
-    description: 'Số bản ghi mỗi trang',
-  })
-  supervised(@Req() req: any, @Query('page') page?: any, @Query('limit') limit?: any) {
-    return this.service.getSupervisedStudents(req.user.userId,page, limit)
+  @ApiQuery({ name: 'q', required: false, type: String })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  getSupervisedStudents(
+    @Req() req: any,
+    @Query('term_id') termId?: string,
+    @Query('status') status?: string,
+    @Query('q') q?: string,
+    @Query('page') page?: any,
+    @Query('limit') limit?: any,
+  ) {
+    return this.service.getSupervisedStudents(req.user.userId, {
+      termId,
+      status,
+      q,
+      page: Number(page ?? 1),
+      limit: Number(limit ?? 10),
+    });
   }
 
   @Patch('status/:id')
   @Roles('lecturer')
-  updateStatus(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateInternshipStatusDto) {
-    return this.service.updateStatus(req.user.userId, id, dto)
+  updateStatus(
+    @Req() req: any,
+    @Param('id') internshipId: string,
+    @Body() dto: UpdateInternshipStatusDto,
+  ) {
+    return this.service.updateStatus(req.user.userId, internshipId, dto);
+  }
+
+  @Get('lecturer/topic-registrations')
+  @Roles('lecturer')
+  @ApiQuery({ name: 'topic_id', type: Number, required: true })
+  getPendingRegistrations(@Req() req: any, @Query('topic_id') topicId: string) {
+    return this.service.getPendingRegistrations(req.user.userId, topicId);
+  }
+
+  @Patch('lecturer/topic-registrations/approve/:id')
+  @Roles('lecturer')
+  approveRegistration(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: ApproveRegistrationDto,
+  ) {
+    return this.service.approveTopicRegistration(req.user.userId, id, dto);
+  }
+
+  @Patch('lecturer/topic-registrations/reject/:id')
+  @Roles('lecturer')
+  rejectRegistration(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: RejectRegistrationDto,
+  ) {
+    return this.service.rejectTopicRegistration(req.user.userId, id, dto);
   }
 
   // ====================== ADMIN ======================
@@ -91,53 +150,55 @@ export class InternshipsController {
   @Post('terms')
   @Roles('admin')
   createTerm(@Body() dto: CreateTermDto) {
-    return this.service.createTerm(dto)
+    return this.service.createTerm(dto);
   }
 
   @Post('topics')
   @Roles('lecturer')
   createTopic(@Req() req: any, @Body() dto: CreateTopicDto) {
-    return this.service.createTopic(req.user.userId, dto)
+    return this.service.createTopic(req.user.userId, dto);
   }
 
   @Get()
-  @Roles('admin')
-  @ApiQuery({
-    name: 'page',
-    required: false,
-    type: Number,
-    example: 1,
-    description: 'Trang (bắt đầu từ 1)',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    example: 10,
-    description: 'Số bản ghi mỗi trang',
-  })
+  @Roles('admin', 'lecturer')
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
   getAllInternships(@Query('page') page?: any, @Query('limit') limit?: any) {
     return this.service.getAllInternships(page, limit);
   }
 
-
-  @Get('/terms')
-  @Roles('admin')
-  @ApiQuery({
-    name: 'page',
-    required: false,
-    type: Number,
-    example: 1,
-    description: 'Trang (bắt đầu từ 1)',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    example: 10,
-    description: 'Số bản ghi mỗi trang',
-  })
-  getAllInternshipTerms(@Query('page') page?: any, @Query('limit') limit?: any) {
+  @Get('terms')
+  @Roles('admin', 'lecturer')
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  getAllInternshipTerms(
+    @Query('page') page?: any,
+    @Query('limit') limit?: any,
+  ) {
     return this.service.getAllInternshipTerms(page, limit);
+  }
+  @Get('terms/:termId/topics')
+  @Roles('admin')
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  getTopicsByTermForAdmin(
+    @Param('termId') termId: string,
+    @Query('page') page?: any,
+    @Query('limit') limit?: any,
+  ) {
+    return this.service.getTopicsByTerm(termId, page, limit);
+  }
+
+  @Get('lecturer/terms/:termId/topics')
+  @Roles('lecturer')
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  getTopicsByTermForLecturer(
+    @Req() req: any,
+    @Param('termId') termId: string,
+    @Query('page') page?: any,
+    @Query('limit') limit?: any,
+  ) {
+    return this.service.getMyTopicsByTerm(req.user.userId, termId, page, limit);
   }
 }
