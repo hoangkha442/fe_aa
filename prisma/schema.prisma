@@ -161,9 +161,14 @@ model grades {
   updated_by        BigInt?             @db.UnsignedBigInt
   created_at        DateTime            @default(now()) @db.Timestamp(0)
   updated_at        DateTime            @default(now()) @db.Timestamp(0)
+  score_components  Json?
+  grading_policy_id BigInt?             @db.UnsignedBigInt
+  calculated_at     DateTime?           @db.DateTime(0)
+  is_locked         Boolean             @default(false)
   grade_change_logs grade_change_logs[]
   classes           classes             @relation(fields: [class_id], references: [class_id], map: "fk_grades_class")
   courses           courses             @relation(fields: [course_id], references: [course_id], map: "fk_grades_course")
+  grading_policies  grading_policies?   @relation(fields: [grading_policy_id], references: [policy_id], map: "fk_grades_policy")
   semesters         semesters           @relation(fields: [semester_id], references: [semester_id], map: "fk_grades_semester")
   students          students            @relation(fields: [student_id], references: [student_id], onDelete: Cascade, map: "fk_grades_student")
   users             users?              @relation(fields: [updated_by], references: [user_id], map: "fk_grades_updated_by")
@@ -174,6 +179,7 @@ model grades {
   @@index([class_id, semester_id], map: "idx_grade_class_sem")
   @@index([course_id], map: "idx_grade_course")
   @@index([student_id, semester_id], map: "idx_grade_student_sem")
+  @@index([grading_policy_id], map: "fk_grades_policy")
 }
 
 model import_batches {
@@ -367,12 +373,33 @@ model curriculum_items {
 }
 
 model grading_policies {
-  policy_id     BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  class_id      BigInt   @unique(map: "uq_policy_class") @db.UnsignedBigInt
-  pass_score_10 Decimal  @db.Decimal(5, 2)
-  created_at    DateTime @default(now()) @db.Timestamp(0)
-  updated_at    DateTime @default(now()) @db.Timestamp(0)
-  classes       classes  @relation(fields: [class_id], references: [class_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_policy_class")
+  policy_id         BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  class_id          BigInt         @unique(map: "uq_policy_class") @db.UnsignedBigInt
+  pass_score_10     Decimal        @db.Decimal(5, 2)
+  created_at        DateTime       @default(now()) @db.Timestamp(0)
+  updated_at        DateTime       @default(now()) @db.Timestamp(0)
+  pass_score_4      Decimal?       @db.Decimal(4, 2)
+  pass_letter_grade String?        @db.VarChar(5)
+  allow_retake      Boolean        @default(true)
+  max_attempts      Int            @default(3)
+  note              String?        @db.VarChar(255)
+  grade_scales      grade_scales[]
+  grades            grades[]
+  classes           classes        @relation(fields: [class_id], references: [class_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_policy_class")
+}
+
+model grade_scales {
+  scale_id          BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  grading_policy_id BigInt           @db.UnsignedBigInt
+  min_score_10      Decimal          @db.Decimal(5, 2)
+  max_score_10      Decimal          @db.Decimal(5, 2)
+  letter_grade      String           @db.VarChar(5)
+  score_4           Decimal          @db.Decimal(4, 2)
+  is_pass           Boolean
+  created_at        DateTime         @default(now()) @db.Timestamp(0)
+  grading_policies  grading_policies @relation(fields: [grading_policy_id], references: [policy_id], onDelete: Cascade, map: "fk_scale_policy")
+
+  @@index([grading_policy_id], map: "idx_scale_policy")
 }
 
 enum import_batches_import_type {

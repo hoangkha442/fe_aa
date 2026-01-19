@@ -35,7 +35,6 @@ export class GradesController {
     return this.gradesService.updateGrade(req.user.userId, id, dto);
   }
 
-  // ===== Import (Excel/CSV) =====
   @Post('import')
   @ApiConsumes('multipart/form-data')
   @ApiQuery({ name: 'overwrite', required: false, type: String })

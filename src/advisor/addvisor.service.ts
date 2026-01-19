@@ -1665,4 +1665,190 @@ export class AdvisorService {
 
     return { class_id: idToString(clsId), retake_students: result, count: result.length };
   }
+
+
+  async getStudentSemesters(studentId: bigint) {
+    // Lấy tất cả semesters, kèm counts theo student
+    const semesters = await this.prisma.semesters.findMany({ orderBy: { start_date: "desc" } });
+
+    // snapshot map
+    const snaps = await this.prisma.gpa_snapshots.findMany({
+      where: { student_id: studentId },
+      select: { semester_id: true },
+    });
+    const snapSet = new Set(snaps.map((x) => x.semester_id.toString()));
+
+    // grades group count
+    const grades = await this.prisma.grades.groupBy({
+      by: ["semester_id"],
+      where: { student_id: studentId },
+      _count: { grade_id: true },
+    });
+    const gradeCountMap = new Map(grades.map((g) => [g.semester_id.toString(), g._count.grade_id]));
+
+    // warnings group count
+    const warnings = await this.prisma.warnings.groupBy({
+      by: ["semester_id"],
+      where: { student_id: studentId },
+      _count: { warning_id: true },
+    });
+    const warningCountMap = new Map(warnings.map((w) => [w.semester_id.toString(), w._count.warning_id]));
+
+    // notes count (notes gắn warning trong kỳ)
+    // lấy warnings ids theo semester trước
+    const warningRows = await this.prisma.warnings.findMany({
+      where: { student_id: studentId },
+      select: { warning_id: true, semester_id: true },
+    });
+    const warnIdsBySem = new Map<string, bigint[]>();
+    for (const w of warningRows) {
+      const key = w.semester_id.toString();
+      const arr = warnIdsBySem.get(key) ?? [];
+      arr.push(w.warning_id);
+      warnIdsBySem.set(key, arr);
+    }
+
+    // đếm notes cho từng semester (loop ít, demo ok)
+    const out = [];
+    for (const sem of semesters) {
+      const semKey = sem.semester_id.toString();
+      const warnIds = warnIdsBySem.get(semKey) ?? [];
+      const notesCount = warnIds.length
+        ? await this.prisma.advisory_notes.count({ where: { student_id: studentId, warning_id: { in: warnIds } } })
+        : 0;
+
+      out.push({
+        semester: {
+          id: sem.semester_id.toString(),
+          semester_code: sem.semester_code,
+          name: sem.name,
+          start_date: sem.start_date,
+          end_date: sem.end_date,
+          is_current: sem.is_current,
+        },
+        has_snapshot: snapSet.has(semKey),
+        grades_count: gradeCountMap.get(semKey) ?? 0,
+        warnings_count: warningCountMap.get(semKey) ?? 0,
+        notes_count: notesCount,
+      });
+    }
+
+    return out;
+  }
+
+  async getStudentDetailBySemester(opts: { studentId: bigint; semesterId?: bigint; includeGrades: boolean }) {
+    const { studentId, includeGrades } = opts;
+
+    const student = await this.prisma.students.findUnique({
+      where: { student_id: studentId },
+      include: { classes: true },
+    });
+    if (!student) throw new NotFoundException("Student not found");
+
+    const semester = await this.resolveSemester(opts.semesterId);
+
+    const snapshot = await this.prisma.gpa_snapshots.findUnique({
+      where: { uq_gpa_student_sem: { student_id: studentId, semester_id: semester.semester_id } },
+    });
+
+    const warnings = await this.prisma.warnings.findMany({
+      where: { student_id: studentId, semester_id: semester.semester_id },
+      orderBy: { created_at: "desc" },
+      include: {
+        warning_rules: true,
+      },
+    });
+
+    const warningIds = warnings.map((w) => w.warning_id);
+
+    const notes = warningIds.length
+      ? await this.prisma.advisory_notes.findMany({
+          where: { student_id: studentId, warning_id: { in: warningIds } },
+          orderBy: { created_at: "desc" },
+        })
+      : [];
+
+    const grades = includeGrades
+      ? await this.prisma.grades.findMany({
+          where: { student_id: studentId, semester_id: semester.semester_id },
+          orderBy: [{ course_id: "asc" }, { attempt_no: "asc" }],
+          include: { courses: true },
+        })
+      : [];
+
+    return {
+      student: {
+        id: student.student_id.toString(),
+        student_code: student.student_code,
+        full_name: student.full_name,
+        email: student.email,
+        phone: student.phone,
+        academic_status: student.academic_status,
+        class: student.classes
+          ? {
+              id: student.classes.class_id.toString(),
+              class_code: student.classes.class_code,
+              class_name: student.classes.class_name,
+            }
+          : null,
+      },
+      semester: {
+        id: semester.semester_id.toString(),
+        semester_code: semester.semester_code,
+        name: semester.name,
+        start_date: semester.start_date,
+        end_date: semester.end_date,
+        is_current: semester.is_current,
+      },
+      snapshot,
+      grades: grades.map((g) => ({
+        id: g.grade_id.toString(),
+        attempt_no: g.attempt_no,
+        score_10: g.score_10,
+        score_4: g.score_4,
+        letter_grade: g.letter_grade,
+        is_pass: g.is_pass,
+        note: g.note,
+        course: g.courses
+          ? {
+              course_code: g.courses.course_code,
+              course_name: g.courses.course_name,
+              credits: g.courses.credits,
+            }
+          : null,
+      })),
+      warnings: warnings.map((w) => ({
+        id: w.warning_id.toString(),
+        status: w.status,
+        detected_value: w.detected_value,
+        reason_text: w.reason_text,
+        rule: {
+          rule_code: w.warning_rules.rule_code,
+          rule_name: w.warning_rules.rule_name,
+        },
+        send: {
+          channel: w.send_channel,
+          status: w.send_status,
+          error: w.send_error,
+          sent_at: w.sent_at,
+        },
+        created_at: w.created_at,
+        updated_at: w.updated_at,
+      })),
+      notes: notes.map((n) => ({
+        id: n.note_id.toString(),
+        warning_id: n.warning_id?.toString() ?? null,
+        content: n.content,
+        counseling_date: n.counseling_date,
+        handling_status: n.handling_status,
+        created_at: n.created_at,
+      })),
+      meta: {
+        has_snapshot: !!snapshot,
+        has_grades: grades.length > 0,
+        has_warnings: warnings.length > 0,
+        has_notes: notes.length > 0,
+      },
+    };
+  }
 }
