@@ -1,104 +1,90 @@
-import {
-  BadRequestException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
-import { PrismaClient, users_role } from '@prisma/client';
+import { UnauthorizedException, ForbiddenException, Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { JwtService } from '@nestjs/jwt';
-import { LoginAuthDto } from './dto/login-auth.dto';
-import { CreateAuthDto } from 'src/auth/dto/create-auth.dto';
+import { PrismaClient, users_role, users_status } from '@prisma/client';
 import { JwtPayload } from 'src/types/jwt-payload.type';
+
+import { JwtService } from '@nestjs/jwt';
+
 @Injectable()
 export class AuthService {
-  constructor(private jwtService: JwtService) {}
-  prisma = new PrismaClient();
+  private readonly MAX_FAILED = 5;     
+  private readonly LOCK_MINUTES = 15;
+  constructor(
+    private jwtService: JwtService  
+  ) {}
+  prisma = new PrismaClient()
+  async login(data: { email: string; password: string }) {
+    const email = (data.email || '').trim().toLowerCase();
 
-  // ***************************** TẠO TÀI KHOẢN *****************************
-  async signup(dto: CreateAuthDto) {
-    const exists = await this.prisma.users.findUnique({
-      where: { email: dto.email },
-    });
-    if (exists) throw new BadRequestException('Email đã tồn tại');
-
-    const password_hash = await bcrypt.hash(dto.password, 10);
-
-    const user = await this.prisma.users.create({
-      data: {
-        full_name: dto.full_name,
-        email: dto.email,
-        password_hash,
-        role: dto.role,
-      }
-    })
-
-    // tạo student
-    if (dto.role === users_role.student) {
-      await this.prisma.students.create({
-        data: {
-          user_id: user.id,
-          student_code: dto.student_code ?? `STD${user.id}`,
-          phone: dto.phone ?? null,
-          class_id: dto.class_id ? BigInt(dto.class_id) : null,
-        }
-      })
-    }
-
-    // tạo lecturer
-    if (dto.role === users_role.lecturer) {
-      await this.prisma.lecturers.create({
-        data: {
-          user_id: user.id,
-          lecturer_code: dto.lecturer_code ?? `LEC${user.id}`,
-          department: dto.department ?? null,
-          phone: dto.phone ?? null,
-        }
-      })
-
-    return {
-      message: 'Tạo người dùng thành công',
-      user: {
-        id: user.id.toString(),
-        full_name: user.full_name,
-        email: user.email,
-        role: user.role,
-      },
-    };
-  }
-}
-
-  // ***************************** ĐĂNG NHẬP *****************************
-  async login(data: LoginAuthDto) {
     const user = await this.prisma.users.findUnique({
-      where: { email: data.email },
+      where: { email },
+      select: {
+        user_id: true,
+        email: true,
+        password_hash: true,
+        role: true,
+        status: true,
+        locked_until: true,
+        failed_login_count: true,
+      },
     });
 
     if (!user) {
-      throw new UnauthorizedException('Email không tồn tại');
+      throw new UnauthorizedException('Thông tin đăng nhập không hợp lệ');
     }
 
+    if (user.status === users_status.inactive) {
+      throw new ForbiddenException('Tài khoản đang bị vô hiệu hóa');
+    }
+
+    const now = new Date();
+    if (user.locked_until && user.locked_until > now) {
+      throw new ForbiddenException('Tài khoản đang bị khóa tạm thời, vui lòng thử lại sau');
+    }
     const match = await bcrypt.compare(data.password, user.password_hash);
+
     if (!match) {
-      throw new UnauthorizedException('Sai mật khẩu');
+      const nextFailed = (user.failed_login_count ?? 0) + 1;
+
+      const updateData: any = {
+        failed_login_count: nextFailed,
+      };
+
+      if (nextFailed >= this.MAX_FAILED) {
+        updateData.status = users_status.locked;
+        updateData.locked_until = new Date(now.getTime() + this.LOCK_MINUTES * 60 * 1000);
+      }
+
+      await this.prisma.users.update({
+        where: { user_id: user.user_id },
+        data: updateData,
+      });
+
+      throw new UnauthorizedException('Thông tin đăng nhập không hợp lệ');
     }
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    await this.prisma.users.update({
+      where: { user_id: user.user_id },
+      data: {
+        failed_login_count: 0,
+        locked_until: null,
+        status: users_status.active,
+        last_login_at: now,
+      },
+    });
+
+    const tokens = await this.generateTokens(user.user_id, user.email!, user.role);
 
     return {
       user: {
-        id: user.id.toString(),
+        id: user.user_id.toString(),
         role: user.role,
       },
       ...tokens,
     };
   }
 
-  // Tạo access + refresh token
-  async generateTokens(
-    id: string | bigint,
-    email: string,
-    role: users_role,
-  ) {
+  async generateTokens(id: string | bigint, email: string, role: users_role) {
     const payload: JwtPayload = {
       sub: id.toString(),
       email,
@@ -106,7 +92,7 @@ export class AuthService {
     };
 
     const access_token = await this.jwtService.signAsync(payload, {
-      expiresIn: '30s',
+      expiresIn: '15m',
     });
 
     const refresh_token = await this.jwtService.signAsync(payload, {
@@ -116,18 +102,13 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
-  // Xác thực refresh token
-  async refreshToken(refreshToken: string) {
-    try {
-      const decoded = await this.jwtService.verifyAsync<JwtPayload>(
-        refreshToken,
-        // { secret: process.env.JWT_SECRET } // nên set nếu bạn tách secret
-      );
+async refreshToken(refreshToken: string) {
+  try {
+    const decoded = (await this.jwtService.verifyAsync(refreshToken)) as JwtPayload;
 
-      // decoded.sub bây giờ chắc chắn là string
-      return this.generateTokens(decoded.sub, decoded.email, decoded.role);
-    } catch (err) {
-      throw new UnauthorizedException('Refresh token không hợp lệ');
-    }
+    return this.generateTokens(decoded.sub, decoded.email, decoded.role);
+  } catch {
+    throw new UnauthorizedException('Refresh token không hợp lệ');
   }
+}
 }

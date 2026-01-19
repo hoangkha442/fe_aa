@@ -7,329 +7,457 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model attendance_records {
-  id                      BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
-  internship_id           BigInt                     @db.UnsignedBigInt
-  attendance_date         DateTime                   @db.Date
-  check_in_time           DateTime?                  @db.Time(0)
-  check_out_time          DateTime?                  @db.Time(0)
-  status                  attendance_records_status? @default(present)
-  reason                  String?                    @db.VarChar(255)
-  approved_by_lecturer_id BigInt?                    @db.UnsignedBigInt
-  approved_at             DateTime?                  @db.Timestamp(0)
-  rejection_reason        String?                    @db.Text
-  note                    String?                    @db.VarChar(500)
-  created_at              DateTime?                  @default(now()) @db.Timestamp(0)
-  lecturers               lecturers?                 @relation(fields: [approved_by_lecturer_id], references: [id], map: "fk_attendance_approved_lecturer")
-  internships             internships                @relation(fields: [internship_id], references: [id], onDelete: Cascade, map: "fk_attendance_internship")
+model advisory_notes {
+  note_id         BigInt                         @id @default(autoincrement()) @db.UnsignedBigInt
+  student_id      BigInt                         @db.UnsignedBigInt
+  class_id        BigInt                         @db.UnsignedBigInt
+  advisor_user_id BigInt                         @db.UnsignedBigInt
+  warning_id      BigInt?                        @db.UnsignedBigInt
+  content         String                         @db.Text
+  counseling_date DateTime?                      @db.Date
+  handling_status advisory_notes_handling_status @default(not_contacted)
+  attachment_url  String?                        @db.VarChar(500)
+  created_at      DateTime                       @default(now()) @db.Timestamp(0)
+  users           users                          @relation(fields: [advisor_user_id], references: [user_id], map: "fk_notes_advisor")
+  classes         classes                        @relation(fields: [class_id], references: [class_id], map: "fk_notes_class")
+  students        students                       @relation(fields: [student_id], references: [student_id], onDelete: Cascade, map: "fk_notes_student")
+  warnings        warnings?                      @relation(fields: [warning_id], references: [warning_id], map: "fk_notes_warning")
 
-  @@unique([internship_id, attendance_date], map: "uq_attendance_unique")
-  @@index([approved_by_lecturer_id], map: "fk_attendance_approved_lecturer")
-}
-
-model classes {
-  id          BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
-  class_code  String     @unique(map: "class_code") @db.VarChar(50)
-  class_name  String     @db.VarChar(255)
-  course_year Int?
-  major       String?    @db.VarChar(255)
-  created_at  DateTime?  @default(now()) @db.Timestamp(0)
-  students    students[]
-}
-
-model comments {
-  id             BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
-  internship_id  BigInt         @db.UnsignedBigInt
-  type           comments_type? @default(general)
-  author_user_id BigInt         @db.UnsignedBigInt
-  content        String         @db.Text
-  created_at     DateTime?      @default(now()) @db.Timestamp(0)
-  users          users          @relation(fields: [author_user_id], references: [id], onDelete: Cascade, map: "fk_comments_author")
-  internships    internships    @relation(fields: [internship_id], references: [id], onDelete: Cascade, map: "fk_comments_internship")
-
-  @@index([author_user_id], map: "fk_comments_author")
-  @@index([internship_id], map: "fk_comments_internship")
-}
-
-model final_evaluations {
-  id            BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
-  internship_id BigInt      @unique(map: "uq_final_eval_unique") @db.UnsignedBigInt
-  lecturer_id   BigInt      @db.UnsignedBigInt
-  final_grade   Decimal?    @db.Decimal(5, 2)
-  summary       String?     @db.Text
-  created_at    DateTime?   @default(now()) @db.Timestamp(0)
-  internships   internships @relation(fields: [internship_id], references: [id], onDelete: Cascade, map: "fk_final_eval_internship")
-  lecturers     lecturers   @relation(fields: [lecturer_id], references: [id], onDelete: Cascade, map: "fk_final_eval_lecturer")
-
-  @@index([lecturer_id], map: "fk_final_eval_lecturer")
-}
-
-model internship_terms {
-  id                           BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
-  term_name                    String        @db.VarChar(255)
-  start_date                   DateTime      @db.Date
-  end_date                     DateTime      @db.Date
-  total_weeks                  Int?          @default(12) @db.UnsignedTinyInt
-  min_attendance_days_per_week Int?          @default(3) @db.UnsignedTinyInt
-  min_reports                  Int?          @default(3) @db.UnsignedTinyInt
-  created_at                   DateTime?     @default(now()) @db.Timestamp(0)
-  internships                  internships[]
-}
-
-model internship_topics {
-  id                     BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
-  title                  String                    @db.VarChar(255)
-  description            String?                   @db.Text
-  company_name           String?                   @db.VarChar(255)
-  company_address        String?                   @db.VarChar(255)
-  created_by_lecturer_id BigInt?                   @db.UnsignedBigInt
-  term_id                BigInt?                   @db.UnsignedBigInt
-  created_at             DateTime?                 @default(now()) @db.Timestamp(0)
-  max_students           Int?                      @default(3) @db.UnsignedTinyInt
-  current_students       Int?                      @default(0) @db.UnsignedTinyInt
-  status                 internship_topics_status? @default(available)
-  lecturers              lecturers?                @relation(fields: [created_by_lecturer_id], references: [id], map: "fk_topics_lecturer")
-  internships            internships[]
-  topic_registrations    topic_registrations[]
-
-  @@index([created_by_lecturer_id], map: "fk_topics_lecturer")
-}
-
-model internships {
-  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
-  student_id         BigInt               @db.UnsignedBigInt
-  lecturer_id        BigInt               @db.UnsignedBigInt
-  term_id            BigInt               @db.UnsignedBigInt
-  topic_id           BigInt               @db.UnsignedBigInt
-  status             internships_status?  @default(registered)
-  start_date         DateTime?            @db.Date
-  end_date           DateTime?            @db.Date
-  progress_percent   Decimal?             @default(0.00) @db.Decimal(5, 2)
-  created_at         DateTime?            @default(now()) @db.Timestamp(0)
-  updated_at         DateTime?            @default(now()) @db.Timestamp(0)
-  attendance_records attendance_records[]
-  comments           comments[]
-  final_evaluations  final_evaluations?
-  lecturers          lecturers            @relation(fields: [lecturer_id], references: [id], onDelete: Cascade, map: "fk_internships_lecturer")
-  students           students             @relation(fields: [student_id], references: [id], onDelete: Cascade, map: "fk_internships_student")
-  internship_terms   internship_terms     @relation(fields: [term_id], references: [id], onDelete: Cascade, map: "fk_internships_term")
-  internship_topics  internship_topics    @relation(fields: [topic_id], references: [id], onDelete: Cascade, map: "fk_internships_topic")
-  progress_reports   progress_reports[]
-  work_logs          work_logs[]
-
-  @@unique([student_id, term_id], map: "uq_internship_student_term")
-  @@index([lecturer_id], map: "fk_internships_lecturer")
-  @@index([term_id], map: "fk_internships_term")
-  @@index([topic_id], map: "fk_internships_topic")
-}
-
-model lecturers {
-  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
-  user_id            BigInt               @unique @db.UnsignedBigInt
-  lecturer_code      String?              @unique(map: "lecturer_code") @db.VarChar(50)
-  department         String?              @db.VarChar(255)
-  phone              String?              @db.VarChar(20)
-  created_at         DateTime?            @default(now()) @db.Timestamp(0)
-  attendance_records attendance_records[]
-  final_evaluations  final_evaluations[]
-  internship_topics  internship_topics[]
-  internships        internships[]
-  users              users                @relation(fields: [user_id], references: [id], onDelete: Cascade, map: "fk_lecturers_user")
-  progress_reports   progress_reports[]
-
-  @@index([user_id], map: "fk_lecturers_user")
-}
-
-model notifications {
-  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  user_id    BigInt    @db.UnsignedBigInt
-  type       String    @db.VarChar(100)
-  title      String    @db.VarChar(255)
-  message    String    @db.Text
-  link_url   String?   @db.VarChar(500)
-  is_read    Boolean   @default(false)
-  created_at DateTime? @default(now()) @db.Timestamp(0)
-  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, map: "fk_notifications_user")
-
-  @@index([user_id], map: "fk_notifications_user")
-}
-
-model progress_reports {
-  id                      BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
-  internship_id           BigInt                   @db.UnsignedBigInt
-  report_no               Int?                     @db.UnsignedTinyInt
-  week_no                 Int?                     @db.UnsignedTinyInt
-  title                   String                   @db.VarChar(255)
-  content                 String                   @db.Text
-  submitted_at            DateTime?                @default(now()) @db.Timestamp(0)
-  status                  progress_reports_status? @default(submitted)
-  is_pass                 Boolean?                 @default(true)
-  reviewed_by_lecturer_id BigInt?                  @db.UnsignedBigInt
-  reviewed_at             DateTime?                @db.Timestamp(0)
-  score                   Decimal?                 @db.Decimal(5, 2)
-  feedback                String?                  @db.Text
-  internships             internships              @relation(fields: [internship_id], references: [id], onDelete: Cascade, map: "fk_reports_internship")
-  lecturers               lecturers?               @relation(fields: [reviewed_by_lecturer_id], references: [id], map: "fk_reports_lecturer")
-  report_attachments      report_attachments[]
-
-  @@index([internship_id], map: "fk_reports_internship")
-  @@index([reviewed_by_lecturer_id], map: "fk_reports_lecturer")
-}
-
-model report_attachments {
-  id               BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
-  report_id        BigInt           @db.UnsignedBigInt
-  file_path        String           @db.VarChar(500)
-  description      String?          @db.VarChar(255)
-  uploaded_at      DateTime?        @default(now()) @db.Timestamp(0)
-  progress_reports progress_reports @relation(fields: [report_id], references: [id], onDelete: Cascade, map: "fk_report_attachments_report")
-
-  @@index([report_id], map: "fk_report_attachments_report")
-}
-
-model students {
-  id                  BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
-  user_id             BigInt                @db.UnsignedBigInt
-  student_code        String                @unique(map: "student_code") @db.VarChar(50)
-  class_id            BigInt?               @db.UnsignedBigInt
-  phone               String?               @db.VarChar(20)
-  created_at          DateTime?             @default(now()) @db.Timestamp(0)
-  internships         internships[]
-  classes             classes?              @relation(fields: [class_id], references: [id], map: "fk_students_class")
-  users               users                 @relation(fields: [user_id], references: [id], onDelete: Cascade, map: "fk_students_user")
-  topic_registrations topic_registrations[]
-
-  @@index([class_id], map: "fk_students_class")
-  @@index([user_id], map: "fk_students_user")
-}
-
-model users {
-  id            BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
-  full_name     String          @db.VarChar(255)
-  email         String          @unique(map: "email") @db.VarChar(255)
-  password_hash String          @db.VarChar(255)
-  role          users_role
-  is_active     Boolean         @default(true)
-  created_at    DateTime?       @default(now()) @db.Timestamp(0)
-  updated_at    DateTime?       @default(now()) @db.Timestamp(0)
-  audit_logs    audit_logs[]
-  comments      comments[]
-  lecturers     lecturers?
-  notifications notifications[]
-  students      students[]
-}
-
-model work_log_attachments {
-  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  work_log_id BigInt    @db.UnsignedBigInt
-  file_path   String    @db.VarChar(500)
-  public_id   String?   @db.VarChar(255)
-  description String?   @db.VarChar(255)
-  uploaded_at DateTime? @default(now()) @db.Timestamp(0)
-  work_logs   work_logs @relation(fields: [work_log_id], references: [id], onDelete: Cascade, map: "fk_worklog_attachments_worklog")
-
-  @@index([work_log_id], map: "fk_worklog_attachments_worklog")
-  @@index([public_id], map: "idx_work_log_attachments_public_id")
-}
-
-model work_logs {
-  id                   BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
-  internship_id        BigInt                 @db.UnsignedBigInt
-  work_date            DateTime               @db.Date
-  content              String                 @db.Text
-  score                Decimal?               @db.Decimal(5, 2)
-  feedback             String?                @db.Text
-  created_at           DateTime?              @default(now()) @db.Timestamp(0)
-  work_log_attachments work_log_attachments[]
-  internships          internships            @relation(fields: [internship_id], references: [id], onDelete: Cascade, map: "fk_worklogs_internship")
-
-  @@index([internship_id], map: "fk_worklogs_internship")
+  @@index([advisor_user_id], map: "idx_notes_advisor")
+  @@index([class_id], map: "idx_notes_class")
+  @@index([handling_status], map: "idx_notes_status")
+  @@index([student_id], map: "idx_notes_student")
+  @@index([warning_id], map: "idx_notes_warning")
 }
 
 model audit_logs {
-  id          BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  user_id     BigInt    @db.UnsignedBigInt
-  action      String    @db.VarChar(255)
-  entity      String?   @db.VarChar(255)
-  entity_id   BigInt?   @db.UnsignedBigInt
-  description String?   @db.Text
-  created_at  DateTime? @default(now()) @db.Timestamp(0)
-  users       users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_audit_user")
+  log_id      BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id     BigInt?           @db.UnsignedBigInt
+  action      audit_logs_action
+  object_type String?           @db.VarChar(50)
+  object_id   BigInt?           @db.UnsignedBigInt
+  ip_address  String?           @db.VarChar(45)
+  details     Json?
+  created_at  DateTime          @default(now()) @db.Timestamp(0)
+  users       users?            @relation(fields: [user_id], references: [user_id], map: "fk_audit_user")
 
-  @@index([user_id], map: "fk_audit_user")
+  @@index([action], map: "idx_audit_action")
+  @@index([user_id], map: "idx_audit_user")
 }
 
-model internship_statistics {
-  internship_id     BigInt    @id @db.UnsignedBigInt
-  total_attendance  Int?      @default(0)
-  present_days      Int?      @default(0)
-  absent_days       Int?      @default(0)
-  total_reports     Int?      @default(0)
-  completed_reports Int?      @default(0)
-  progress_percent  Decimal?  @default(0.00) @db.Decimal(5, 2)
-  updated_at        DateTime? @default(now()) @db.Timestamp(0)
+model class_advisor_assignments {
+  assignment_id   BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  class_id        BigInt    @db.UnsignedBigInt
+  advisor_user_id BigInt    @db.UnsignedBigInt
+  from_date       DateTime  @db.Date
+  to_date         DateTime? @db.Date
+  is_primary      Boolean   @default(true)
+  created_at      DateTime  @default(now()) @db.Timestamp(0)
+  users           users     @relation(fields: [advisor_user_id], references: [user_id], map: "fk_assign_advisor")
+  classes         classes   @relation(fields: [class_id], references: [class_id], onDelete: Cascade, map: "fk_assign_class")
+
+  @@index([advisor_user_id], map: "idx_assign_advisor")
+  @@index([class_id, from_date, to_date], map: "idx_assign_class")
 }
 
-model system_settings {
-  setting_key   String    @id @db.VarChar(100)
-  setting_value String    @db.Text
-  updated_at    DateTime? @default(now()) @db.Timestamp(0)
+model classes {
+  class_id                  BigInt                      @id @default(autoincrement()) @db.UnsignedBigInt
+  class_code                String                      @unique(map: "uq_classes_code") @db.VarChar(50)
+  class_name                String                      @db.VarChar(255)
+  major_name                String                      @default("Công nghệ thông tin") @db.VarChar(255)
+  cohort_year               Int
+  status                    classes_status              @default(active)
+  current_advisor_user_id   BigInt?                     @db.UnsignedBigInt
+  created_at                DateTime                    @default(now()) @db.Timestamp(0)
+  updated_at                DateTime                    @default(now()) @db.Timestamp(0)
+  advisory_notes            advisory_notes[]
+  class_advisor_assignments class_advisor_assignments[]
+  users                     users?                      @relation(fields: [current_advisor_user_id], references: [user_id], map: "fk_classes_current_advisor")
+  gpa_snapshots             gpa_snapshots[]
+  grades                    grades[]
+  students                  students[]
+  warnings                  warnings[]
+
+  @@index([current_advisor_user_id], map: "idx_classes_advisor")
+  @@index([cohort_year], map: "idx_classes_cohort")
+  @@index([major_name], map: "idx_classes_major")
 }
 
-model topic_registrations {
-  id                BigInt                      @id @default(autoincrement()) @db.UnsignedBigInt
-  topic_id          BigInt                      @db.UnsignedBigInt
-  student_id        BigInt                      @db.UnsignedBigInt
-  status            topic_registrations_status? @default(pending)
-  registered_at     DateTime?                   @default(now()) @db.Timestamp(0)
-  students          students                    @relation(fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_topic_reg_student")
-  internship_topics internship_topics           @relation(fields: [topic_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_topic_reg_topic")
+model courses {
+  course_id   BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  course_code String              @unique(map: "uq_courses_code") @db.VarChar(50)
+  course_name String              @db.VarChar(255)
+  credits     Int
+  course_type courses_course_type @default(required)
+  is_active   Boolean             @default(true)
+  created_at  DateTime            @default(now()) @db.Timestamp(0)
+  updated_at  DateTime            @default(now()) @db.Timestamp(0)
+  grades      grades[]
 
-  @@unique([student_id, topic_id], map: "uq_student_topic")
-  @@index([topic_id], map: "fk_topic_reg_topic")
+  @@index([is_active], map: "idx_courses_active")
+  @@index([credits], map: "idx_courses_credits")
+}
+
+model gpa_snapshots {
+  snapshot_id                   BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  student_id                    BigInt                    @db.UnsignedBigInt
+  class_id                      BigInt                    @db.UnsignedBigInt
+  semester_id                   BigInt                    @db.UnsignedBigInt
+  gpa_semester                  Decimal?                  @db.Decimal(4, 2)
+  gpa_cumulative                Decimal?                  @db.Decimal(4, 2)
+  credits_attempted_semester    Int                       @default(0)
+  credits_earned_semester       Int                       @default(0)
+  credits_failed_semester       Int                       @default(0)
+  credits_earned_total          Int                       @default(0)
+  failed_courses_count_semester Int                       @default(0)
+  data_status                   gpa_snapshots_data_status @default(ok)
+  created_at                    DateTime                  @default(now()) @db.Timestamp(0)
+  updated_at                    DateTime                  @default(now()) @db.Timestamp(0)
+  classes                       classes                   @relation(fields: [class_id], references: [class_id], map: "fk_gpa_class")
+  semesters                     semesters                 @relation(fields: [semester_id], references: [semester_id], map: "fk_gpa_sem")
+  students                      students                  @relation(fields: [student_id], references: [student_id], onDelete: Cascade, map: "fk_gpa_student")
+
+  @@unique([student_id, semester_id], map: "uq_gpa_student_sem")
+  @@index([semester_id], map: "fk_gpa_sem")
+  @@index([class_id, semester_id], map: "idx_gpa_class_sem")
+}
+
+model grade_change_logs {
+  change_id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  grade_id         BigInt   @db.UnsignedBigInt
+  changed_by       BigInt?  @db.UnsignedBigInt
+  changed_at       DateTime @default(now()) @db.Timestamp(0)
+  old_score_10     Decimal? @db.Decimal(5, 2)
+  new_score_10     Decimal? @db.Decimal(5, 2)
+  old_letter_grade String?  @db.VarChar(5)
+  new_letter_grade String?  @db.VarChar(5)
+  old_score_4      Decimal? @db.Decimal(4, 2)
+  new_score_4      Decimal? @db.Decimal(4, 2)
+  old_is_pass      Boolean?
+  new_is_pass      Boolean?
+  reason           String?  @db.VarChar(255)
+  grades           grades   @relation(fields: [grade_id], references: [grade_id], onDelete: Cascade, map: "fk_grade_change_grade")
+  users            users?   @relation(fields: [changed_by], references: [user_id], map: "fk_grade_change_user")
+
+  @@index([changed_by], map: "idx_change_by")
+  @@index([grade_id], map: "idx_change_grade")
+}
+
+model grades {
+  grade_id          BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  student_id        BigInt              @db.UnsignedBigInt
+  class_id          BigInt              @db.UnsignedBigInt
+  semester_id       BigInt              @db.UnsignedBigInt
+  course_id         BigInt              @db.UnsignedBigInt
+  attempt_no        Int                 @default(1)
+  score_10          Decimal?            @db.Decimal(5, 2)
+  letter_grade      String?             @db.VarChar(5)
+  score_4           Decimal?            @db.Decimal(4, 2)
+  is_pass           Boolean?
+  note              String?             @db.VarChar(255)
+  updated_by        BigInt?             @db.UnsignedBigInt
+  created_at        DateTime            @default(now()) @db.Timestamp(0)
+  updated_at        DateTime            @default(now()) @db.Timestamp(0)
+  grade_change_logs grade_change_logs[]
+  classes           classes             @relation(fields: [class_id], references: [class_id], map: "fk_grades_class")
+  courses           courses             @relation(fields: [course_id], references: [course_id], map: "fk_grades_course")
+  semesters         semesters           @relation(fields: [semester_id], references: [semester_id], map: "fk_grades_semester")
+  students          students            @relation(fields: [student_id], references: [student_id], onDelete: Cascade, map: "fk_grades_student")
+  users             users?              @relation(fields: [updated_by], references: [user_id], map: "fk_grades_updated_by")
+
+  @@unique([student_id, semester_id, course_id, attempt_no], map: "uq_grade_unique")
+  @@index([semester_id], map: "fk_grades_semester")
+  @@index([updated_by], map: "fk_grades_updated_by")
+  @@index([class_id, semester_id], map: "idx_grade_class_sem")
+  @@index([course_id], map: "idx_grade_course")
+  @@index([student_id, semester_id], map: "idx_grade_student_sem")
+}
+
+model import_batches {
+  batch_id    BigInt                     @id @default(autoincrement()) @db.UnsignedBigInt
+  import_type import_batches_import_type
+  file_name   String                     @db.VarChar(255)
+  status      import_batches_status      @default(processing)
+  errors_json Json?
+  created_by  BigInt?                    @db.UnsignedBigInt
+  created_at  DateTime                   @default(now()) @db.Timestamp(0)
+  users       users?                     @relation(fields: [created_by], references: [user_id], map: "fk_import_user")
+
+  @@index([created_by], map: "idx_import_created_by")
+  @@index([import_type, status], map: "idx_import_status")
+}
+
+model password_reset_otps {
+  otp_id     BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id    BigInt    @db.UnsignedBigInt
+  otp_code   String    @db.VarChar(20)
+  expires_at DateTime  @db.DateTime(0)
+  used_at    DateTime? @db.DateTime(0)
+  created_at DateTime  @default(now()) @db.Timestamp(0)
+  users      users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade, map: "fk_otp_user")
+
+  @@index([expires_at], map: "idx_otp_expires")
+  @@index([user_id], map: "idx_otp_user")
+}
+
+model semesters {
+  semester_id   BigInt          @id @default(autoincrement()) @db.UnsignedBigInt
+  semester_code String          @unique(map: "uq_semesters_code") @db.VarChar(50)
+  name          String          @db.VarChar(255)
+  start_date    DateTime        @db.Date
+  end_date      DateTime        @db.Date
+  is_current    Boolean         @default(false)
+  created_at    DateTime        @default(now()) @db.Timestamp(0)
+  updated_at    DateTime        @default(now()) @db.Timestamp(0)
+  gpa_snapshots gpa_snapshots[]
+  grades        grades[]
+  warnings      warnings[]
+
+  @@index([is_current], map: "idx_semester_current")
+  @@index([start_date, end_date], map: "idx_semester_dates")
+}
+
+model students {
+  student_id      BigInt                   @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id         BigInt?                  @unique(map: "uq_students_user") @db.UnsignedBigInt
+  student_code    String                   @unique(map: "uq_students_code") @db.VarChar(50)
+  full_name       String                   @db.VarChar(255)
+  dob             DateTime?                @db.Date
+  gender          students_gender?
+  email           String?                  @db.VarChar(255)
+  phone           String?                  @db.VarChar(30)
+  class_id        BigInt                   @db.UnsignedBigInt
+  cohort_year     Int
+  major_name      String                   @default("Công nghệ thông tin") @db.VarChar(255)
+  academic_status students_academic_status @default(studying)
+  created_at      DateTime                 @default(now()) @db.Timestamp(0)
+  updated_at      DateTime                 @default(now()) @db.Timestamp(0)
+  advisory_notes  advisory_notes[]
+  gpa_snapshots   gpa_snapshots[]
+  grades          grades[]
+  classes         classes                  @relation(fields: [class_id], references: [class_id], map: "fk_students_class")
+  users           users?                   @relation(fields: [user_id], references: [user_id], map: "fk_students_user")
+  warnings        warnings[]
+
+  @@index([class_id], map: "idx_students_class")
+  @@index([academic_status], map: "idx_students_status")
+}
+
+model users {
+  user_id                                  BigInt                      @id @default(autoincrement()) @db.UnsignedBigInt
+  username                                 String                      @unique(map: "uq_users_username") @db.VarChar(100)
+  email                                    String?                     @unique(map: "uq_users_email") @db.VarChar(255)
+  password_hash                            String                      @db.VarChar(255)
+  full_name                                String                      @db.VarChar(255)
+  phone                                    String?                     @db.VarChar(30)
+  role                                     users_role                  @default(STUDENT)
+  status                                   users_status                @default(active)
+  failed_login_count                       Int                         @default(0)
+  locked_until                             DateTime?                   @db.DateTime(0)
+  last_login_at                            DateTime?                   @db.DateTime(0)
+  created_at                               DateTime                    @default(now()) @db.Timestamp(0)
+  updated_at                               DateTime                    @default(now()) @db.Timestamp(0)
+  advisory_notes                           advisory_notes[]
+  audit_logs                               audit_logs[]
+  class_advisor_assignments                class_advisor_assignments[]
+  classes                                  classes[]
+  grade_change_logs                        grade_change_logs[]
+  grades                                   grades[]
+  import_batches                           import_batches[]
+  password_reset_otps                      password_reset_otps[]
+  students                                 students?
+  warning_send_logs                        warning_send_logs[]
+  warnings_warnings_acknowledged_byTousers warnings[]                  @relation("warnings_acknowledged_byTousers")
+  warnings                                 warnings[]
+  warnings_warnings_resolved_byTousers     warnings[]                  @relation("warnings_resolved_byTousers")
+
+  @@index([role], map: "idx_users_role")
+  @@index([status], map: "idx_users_status")
+}
+
+model warning_rules {
+  rule_id         BigInt                       @id @default(autoincrement()) @db.UnsignedBigInt
+  rule_code       String                       @unique(map: "uq_rule_code") @db.VarChar(50)
+  rule_name       String                       @db.VarChar(255)
+  description     String?                      @db.VarChar(500)
+  condition_type  warning_rules_condition_type
+  operator        warning_rules_operator
+  threshold_value Decimal                      @db.Decimal(10, 2)
+  level           Int?
+  is_active       Boolean                      @default(true)
+  created_at      DateTime                     @default(now()) @db.Timestamp(0)
+  updated_at      DateTime                     @default(now()) @db.Timestamp(0)
+  warnings        warnings[]
+
+  @@index([is_active, condition_type], map: "idx_rule_active")
+}
+
+model warnings {
+  warning_id                            BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  student_id                            BigInt                 @db.UnsignedBigInt
+  class_id                              BigInt                 @db.UnsignedBigInt
+  semester_id                           BigInt                 @db.UnsignedBigInt
+  rule_id                               BigInt                 @db.UnsignedBigInt
+  detected_value                        Decimal?               @db.Decimal(10, 2)
+  reason_text                           String?                @db.VarChar(500)
+  status                                warnings_status        @default(Draft)
+  send_channel                          warnings_send_channel?
+  send_status                           warnings_send_status?
+  send_error                            String?                @db.VarChar(500)
+  sent_at                               DateTime?              @db.DateTime(0)
+  created_by                            BigInt?                @db.UnsignedBigInt
+  created_at                            DateTime               @default(now()) @db.Timestamp(0)
+  updated_at                            DateTime               @default(now()) @db.Timestamp(0)
+  acknowledged_at                       DateTime?              @db.DateTime(0)
+  acknowledged_by                       BigInt?                @db.UnsignedBigInt
+  resolved_at                           DateTime?              @db.DateTime(0)
+  resolved_by                           BigInt?                @db.UnsignedBigInt
+  advisory_notes                        advisory_notes[]
+  warning_send_logs                     warning_send_logs[]
+  users_warnings_acknowledged_byTousers users?                 @relation("warnings_acknowledged_byTousers", fields: [acknowledged_by], references: [user_id], onUpdate: NoAction, map: "fk_warning_ack_by")
+  classes                               classes                @relation(fields: [class_id], references: [class_id], map: "fk_warning_class")
+  users                                 users?                 @relation(fields: [created_by], references: [user_id], map: "fk_warning_creator")
+  users_warnings_resolved_byTousers     users?                 @relation("warnings_resolved_byTousers", fields: [resolved_by], references: [user_id], onUpdate: NoAction, map: "fk_warning_res_by")
+  warning_rules                         warning_rules          @relation(fields: [rule_id], references: [rule_id], map: "fk_warning_rule")
+  semesters                             semesters              @relation(fields: [semester_id], references: [semester_id], map: "fk_warning_sem")
+  students                              students               @relation(fields: [student_id], references: [student_id], onDelete: Cascade, map: "fk_warning_student")
+
+  @@unique([student_id, semester_id, rule_id], map: "uq_warning_unique")
+  @@index([created_by], map: "fk_warning_creator")
+  @@index([rule_id], map: "fk_warning_rule")
+  @@index([semester_id], map: "fk_warning_sem")
+  @@index([class_id, semester_id], map: "idx_warning_class_sem")
+  @@index([status], map: "idx_warning_status")
+  @@index([acknowledged_by], map: "idx_warning_ack_by")
+  @@index([resolved_by], map: "idx_warning_res_by")
+}
+
+model warning_send_logs {
+  send_log_id  BigInt                    @id @default(autoincrement()) @db.UnsignedBigInt
+  warning_id   BigInt                    @db.UnsignedBigInt
+  channel      warning_send_logs_channel
+  status       warning_send_logs_status
+  error        String?                   @db.VarChar(500)
+  attempted_by BigInt?                   @db.UnsignedBigInt
+  attempted_at DateTime                  @default(now()) @db.Timestamp(0)
+  users        users?                    @relation(fields: [attempted_by], references: [user_id], onUpdate: NoAction, map: "fk_sendlog_user")
+  warnings     warnings                  @relation(fields: [warning_id], references: [warning_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_sendlog_warning")
+
+  @@index([attempted_by], map: "idx_sendlog_by")
+  @@index([attempted_at], map: "idx_sendlog_time")
+  @@index([warning_id], map: "idx_sendlog_warning")
+}
+
+enum import_batches_import_type {
+  classes
+  students
+  grades
+  courses
+}
+
+enum audit_logs_action {
+  EXPORT_REPORT
+  IMPORT_DATA
+  UPDATE_GRADE
+  GENERATE_WARNING
+  LOGIN
+}
+
+enum import_batches_status {
+  processing
+  success
+  failed
+}
+
+enum courses_course_type {
+  required
+  elective
+}
+
+enum warning_rules_condition_type {
+  GPA_SEM
+  GPA_CUM
+  FAIL_COUNT
+  CREDITS_EARNED
+  CREDITS_FAILED
+}
+
+enum classes_status {
+  active
+  inactive
+}
+
+enum students_gender {
+  male
+  female
+  other
+}
+
+enum warning_rules_operator {
+  LT
+  LTE
+  GT
+  GTE
+  EQ
+  NEQ
 }
 
 enum users_role {
-  student
-  lecturer
-  admin
+  ADMIN
+  ADVISOR
+  STUDENT
+  SYSTEM
 }
 
-enum attendance_records_status {
-  present
-  absent
-  late
-  excused
+enum advisory_notes_handling_status {
+  not_contacted
+  contacted
+  monitoring
+  stable
 }
 
-enum internships_status {
-  registered
-  in_progress
-  completed
-  dropped
+enum users_status {
+  active
+  locked
+  inactive
 }
 
-enum progress_reports_status {
-  submitted
-  reviewed
-  needs_revision
+enum warnings_status {
+  Draft
+  Sent
+  SendFailed
+  Resolved
+  Acknowledged
 }
 
-enum comments_type {
-  general
-  report
-  attendance
-  evaluation
+enum warnings_send_channel {
+  in_app
+  email
 }
 
-enum topic_registrations_status {
-  pending
-  approved
-  rejected
+enum warnings_send_status {
+  sent
+  failed
 }
 
-enum internship_topics_status {
-  available
-  full
-  closed
+enum gpa_snapshots_data_status {
+  ok
+  missing_data
+}
+
+enum students_academic_status {
+  studying
+  leave
+  dropout
+  graduated
+}
+
+enum warning_send_logs_channel {
+  in_app
+  email
+}
+
+enum warning_send_logs_status {
+  sent
+  failed
 }

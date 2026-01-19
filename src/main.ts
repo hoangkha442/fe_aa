@@ -12,12 +12,12 @@ async function bootstrap() {
     .build();
   const documentFactory = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, documentFactory);
-  app.useGlobalPipes(new ValidationPipe({  // Cấu hình validation pipe để bắt lỗi DTO
+  app.useGlobalPipes(new ValidationPipe({  
     whitelist: true,
     forbidNonWhitelisted: true,
     transform: true,
   }));
-  (BigInt.prototype as any).toJSON = function () { // convert BigInt to string in JSON responses
+  (BigInt.prototype as any).toJSON = function () { 
     return this.toString();
   };
 

@@ -3,12 +3,12 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
-import { UserModule } from './user/user.module';
-import { InternshipsModule } from './internships/internships.module';
-import { WorklogModule } from './worklog/worklog.module';
+import { AdvisorModule } from './advisor/advisor.module';
+import { SemestersModule } from './semesters/semesters.module';
+import { StudentModule } from './student/student.module';
 
 @Module({
-  imports: [ConfigModule.forRoot() ,AuthModule, UserModule,  InternshipsModule, WorklogModule],
+  imports: [ConfigModule.forRoot() ,AuthModule, AdvisorModule, SemestersModule, StudentModule],
   controllers: [AppController],
   providers: [AppService],
 })
