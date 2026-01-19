@@ -73,8 +73,10 @@ model classes {
   advisory_notes            advisory_notes[]
   class_advisor_assignments class_advisor_assignments[]
   users                     users?                      @relation(fields: [current_advisor_user_id], references: [user_id], map: "fk_classes_current_advisor")
+  curriculum_items          curriculum_items[]
   gpa_snapshots             gpa_snapshots[]
   grades                    grades[]
+  grading_policies          grading_policies?
   students                  students[]
   warnings                  warnings[]
 
@@ -84,15 +86,16 @@ model classes {
 }
 
 model courses {
-  course_id   BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
-  course_code String              @unique(map: "uq_courses_code") @db.VarChar(50)
-  course_name String              @db.VarChar(255)
-  credits     Int
-  course_type courses_course_type @default(required)
-  is_active   Boolean             @default(true)
-  created_at  DateTime            @default(now()) @db.Timestamp(0)
-  updated_at  DateTime            @default(now()) @db.Timestamp(0)
-  grades      grades[]
+  course_id        BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  course_code      String              @unique(map: "uq_courses_code") @db.VarChar(50)
+  course_name      String              @db.VarChar(255)
+  credits          Int
+  course_type      courses_course_type @default(required)
+  is_active        Boolean             @default(true)
+  created_at       DateTime            @default(now()) @db.Timestamp(0)
+  updated_at       DateTime            @default(now()) @db.Timestamp(0)
+  curriculum_items curriculum_items[]
+  grades           grades[]
 
   @@index([is_active], map: "idx_courses_active")
   @@index([credits], map: "idx_courses_credits")
@@ -346,6 +349,30 @@ model warning_send_logs {
   @@index([attempted_by], map: "idx_sendlog_by")
   @@index([attempted_at], map: "idx_sendlog_time")
   @@index([warning_id], map: "idx_sendlog_warning")
+}
+
+model curriculum_items {
+  item_id     BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  class_id    BigInt   @db.UnsignedBigInt
+  course_id   BigInt   @db.UnsignedBigInt
+  semester_no Int
+  is_required Boolean  @default(true)
+  created_at  DateTime @default(now()) @db.Timestamp(0)
+  classes     classes  @relation(fields: [class_id], references: [class_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_curriculum_class")
+  courses     courses  @relation(fields: [course_id], references: [course_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_curriculum_course")
+
+  @@unique([class_id, course_id], map: "uq_curriculum_class_course")
+  @@index([course_id], map: "fk_curriculum_course")
+  @@index([class_id, semester_no], map: "idx_curriculum_class_semno")
+}
+
+model grading_policies {
+  policy_id     BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  class_id      BigInt   @unique(map: "uq_policy_class") @db.UnsignedBigInt
+  pass_score_10 Decimal  @db.Decimal(5, 2)
+  created_at    DateTime @default(now()) @db.Timestamp(0)
+  updated_at    DateTime @default(now()) @db.Timestamp(0)
+  classes       classes  @relation(fields: [class_id], references: [class_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_policy_class")
 }
 
 enum import_batches_import_type {

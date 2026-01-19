@@ -1,1014 +1,3 @@
-// import {
-//   BadRequestException,
-//   ForbiddenException,
-//   Injectable,
-//   NotFoundException,
-// } from '@nestjs/common';
-// import { PrismaClient } from '@prisma/client';
-
-// import {
-//   buildPaginationResponse,
-//   parsePaginationQuery,
-// } from 'src/common/helpers/pagination.helper';
-
-// import { GetAdvisorClassesDto } from './dto/get-advisor-classes.dto';
-// import { GetAdvisorDashboardDto } from './dto/get-advisor-dashboard.dto';
-// import { PreviewWarningsDto } from './dto/preview-warnings.dto';
-// import { GenerateWarningsDto } from './dto/generate-warnings.dto';
-// import { SendWarningsDto } from './dto/send-warnings.dto';
-// import { UpdateWarningStatusDto } from './dto/update-warning-status.dto';
-// import { CreateAdvisoryNoteDto } from './dto/create-advisory-note.dto';
-// import { GetAdvisorStudentDetailDto } from './dto/get-advisor-student-detail.dto';
-
-// function toBigInt(id: string | number | bigint): bigint {
-//   if (typeof id === 'bigint') return id;
-//   if (typeof id === 'number') return BigInt(id);
-//   if (typeof id === 'string') return BigInt(id);
-//   throw new Error('Invalid id');
-// }
-// function idToString(v: any): string {
-//   if (typeof v === 'bigint') return v.toString();
-//   if (typeof v === 'number') return String(v);
-//   if (typeof v === 'string') return v;
-//   return String(v ?? '');
-// }
-// function decimalToNumber(v: any): number | null {
-//   if (v === null || v === undefined) return null;
-//   const n = Number(v);
-//   return Number.isFinite(n) ? n : null;
-// }
-// function startOfToday(): Date {
-//   const d = new Date();
-//   d.setHours(0, 0, 0, 0);
-//   return d;
-// }
-// type Operator = 'LT' | 'LTE' | 'GT' | 'GTE' | 'EQ' | 'NEQ';
-// function compare(operator: Operator, value: number, threshold: number): boolean {
-//   switch (operator) {
-//     case 'LT':
-//       return value < threshold;
-//     case 'LTE':
-//       return value <= threshold;
-//     case 'GT':
-//       return value > threshold;
-//     case 'GTE':
-//       return value >= threshold;
-//     case 'EQ':
-//       return value === threshold;
-//     case 'NEQ':
-//       return value !== threshold;
-//     default:
-//       return false;
-//   }
-// }
-
-// @Injectable()
-// export class AdvisorService {
-//   prisma = new PrismaClient();
-
-//   // ====== ACCESS CHECK ======
-//   private async assertAdvisorCanAccessClass(advisorUserId: string, classId: string) {
-//     const today = startOfToday();
-//     const assignment = await this.prisma.class_advisor_assignments.findFirst({
-//       where: {
-//         advisor_user_id: toBigInt(advisorUserId),
-//         class_id: toBigInt(classId),
-//         from_date: { lte: today },
-//         OR: [{ to_date: null }, { to_date: { gte: today } }],
-//       },
-//       select: { assignment_id: true },
-//     });
-
-//     if (!assignment) {
-//       // nếu bạn muốn admin bypass ở service, có thể check req.user.role ở controller
-//       throw new ForbiddenException('Bạn không có quyền truy cập lớp này');
-//     }
-//   }
-
-//   private async assertAdvisorCanAccessStudent(advisorUserId: string, studentId: string) {
-//     const st = await this.prisma.students.findUnique({
-//       where: { student_id: toBigInt(studentId) },
-//       select: { class_id: true },
-//     });
-//     if (!st) throw new NotFoundException('Sinh viên không tồn tại');
-//     await this.assertAdvisorCanAccessClass(advisorUserId, String(st.class_id));
-//   }
-
-//   private async resolveSemester(semesterId?: string) {
-//     if (semesterId) {
-//       const s = await this.prisma.semesters.findUnique({
-//         where: { semester_id: toBigInt(semesterId) },
-//       });
-//       if (!s) throw new NotFoundException('Học kỳ không tồn tại');
-//       return s;
-//     }
-
-//     const cur = await this.prisma.semesters.findFirst({
-//       where: { is_current: true },
-//       orderBy: { start_date: 'desc' },
-//     });
-//     if (cur) return cur;
-
-//     const last = await this.prisma.semesters.findFirst({
-//       orderBy: { end_date: 'desc' },
-//     });
-//     if (!last) throw new NotFoundException('Chưa có dữ liệu học kỳ');
-//     return last;
-//   }
-
-//   // ================== CLASSES ==================
-//   async listMyClasses(advisorUserId: string, dto: GetAdvisorClassesDto) {
-//     const today = startOfToday();
-
-//     const assignments = await this.prisma.class_advisor_assignments.findMany({
-//       where: {
-//         advisor_user_id: toBigInt(advisorUserId),
-//         ...(dto.include_inactive
-//           ? {}
-//           : {
-//               from_date: { lte: today },
-//               OR: [{ to_date: null }, { to_date: { gte: today } }],
-//             }),
-//       },
-//       select: {
-//         assignment_id: true,
-//         from_date: true,
-//         to_date: true,
-//         is_primary: true,
-//         classes: {
-//           select: {
-//             class_id: true,
-//             class_code: true,
-//             class_name: true,
-//             major_name: true,
-//             cohort_year: true,
-//             status: true,
-//           },
-//         },
-//       },
-//       orderBy: [{ is_primary: 'desc' }, { from_date: 'desc' }],
-//     });
-
-//     return assignments.map((a) => ({
-//       assignment_id: idToString(a.assignment_id),
-//       from_date: a.from_date,
-//       to_date: a.to_date,
-//       is_primary: a.is_primary,
-//       class: a.classes
-//         ? {
-//             id: idToString(a.classes.class_id),
-//             class_code: a.classes.class_code,
-//             class_name: a.classes.class_name,
-//             major_name: a.classes.major_name,
-//             cohort_year: a.classes.cohort_year,
-//             status: a.classes.status,
-//           }
-//         : null,
-//     }));
-//   }
-
-//   // ================== SEMESTERS ==================
-//   async listSemesters() {
-//     const list = await this.prisma.semesters.findMany({
-//       select: {
-//         semester_id: true,
-//         semester_code: true,
-//         name: true,
-//         start_date: true,
-//         end_date: true,
-//         is_current: true,
-//       },
-//       orderBy: { start_date: 'desc' },
-//       take: 50,
-//     });
-
-//     return list.map((s) => ({
-//       id: idToString(s.semester_id),
-//       semester_code: s.semester_code,
-//       name: s.name,
-//       start_date: s.start_date,
-//       end_date: s.end_date,
-//       is_current: s.is_current,
-//     }));
-//   }
-
-//   // ================== DASHBOARD (Class) ==================
-//   async getClassDashboard(advisorUserId: string, dto: GetAdvisorDashboardDto) {
-//     await this.assertAdvisorCanAccessClass(advisorUserId, dto.class_id);
-
-//     const classId = toBigInt(dto.class_id);
-//     const semester = await this.resolveSemester(dto.semester_id);
-
-//     const cls = await this.prisma.classes.findUnique({
-//       where: { class_id: classId },
-//       select: {
-//         class_id: true,
-//         class_code: true,
-//         class_name: true,
-//         major_name: true,
-//         cohort_year: true,
-//       },
-//     });
-//     if (!cls) throw new NotFoundException('Lớp không tồn tại');
-
-//     // pagination
-//     const { page: p, limit: l } = parsePaginationQuery({
-//       page: dto.page,
-//       limit: dto.limit,
-//       maxLimit: 100,
-//     });
-//     const skip = (p - 1) * l;
-
-//     const whereStudent: any = { class_id: classId };
-//     if (dto.q && String(dto.q).trim()) {
-//       const q = String(dto.q).trim();
-//       whereStudent.OR = [
-//         { student_code: { contains: q } },
-//         { full_name: { contains: q } },
-//       ];
-//     }
-
-//     const [students, totalStudents] = await Promise.all([
-//       this.prisma.students.findMany({
-//         where: whereStudent,
-//         skip,
-//         take: l,
-//         orderBy: { student_code: 'asc' },
-//         select: {
-//           student_id: true,
-//           student_code: true,
-//           full_name: true,
-//           academic_status: true,
-//         },
-//       }),
-//       this.prisma.students.count({ where: whereStudent }),
-//     ]);
-
-//     const studentIds = students.map((s) => s.student_id);
-
-//     const [snaps, warns] = await Promise.all([
-//       this.prisma.gpa_snapshots.findMany({
-//         where: {
-//           class_id: classId,
-//           semester_id: semester.semester_id,
-//           student_id: { in: studentIds },
-//         },
-//         select: {
-//           student_id: true,
-//           gpa_semester: true,
-//           gpa_cumulative: true,
-//           credits_earned_semester: true,
-//           credits_failed_semester: true,
-//           failed_courses_count_semester: true,
-//           data_status: true,
-//         },
-//       }),
-//       this.prisma.warnings.findMany({
-//         where: { class_id: classId, semester_id: semester.semester_id, student_id: { in: studentIds } },
-//         select: { student_id: true, status: true },
-//       }),
-//     ]);
-
-//     const snapMap = new Map<string, any>();
-//     for (const s of snaps) snapMap.set(idToString(s.student_id), s);
-
-//     const warnCountByStudent = new Map<string, number>();
-//     for (const w of warns) {
-//       const sid = idToString(w.student_id);
-//       warnCountByStudent.set(sid, (warnCountByStudent.get(sid) ?? 0) + 1);
-//     }
-
-//     // summary toàn lớp (nhẹ nhất: lấy gpa_snapshots + warnings theo class+semester)
-//     const [snapsAll, warnsAll] = await Promise.all([
-//       this.prisma.gpa_snapshots.findMany({
-//         where: { class_id: classId, semester_id: semester.semester_id },
-//         select: { gpa_semester: true, data_status: true },
-//       }),
-//       this.prisma.warnings.findMany({
-//         where: { class_id: classId, semester_id: semester.semester_id },
-//         select: { status: true },
-//       }),
-//     ]);
-
-//     const gpaVals = snapsAll
-//       .filter((x) => x.data_status === 'ok')
-//       .map((x) => decimalToNumber(x.gpa_semester))
-//       .filter((x): x is number => typeof x === 'number');
-
-//     const warningsByStatus: Record<string, number> = {};
-//     for (const w of warnsAll) warningsByStatus[w.status] = (warningsByStatus[w.status] ?? 0) + 1;
-
-//     const rows = students.map((st) => {
-//       const sid = idToString(st.student_id);
-//       const snap = snapMap.get(sid);
-//       return {
-//         student: {
-//           id: sid,
-//           student_code: st.student_code,
-//           full_name: st.full_name,
-//           academic_status: st.academic_status,
-//         },
-//         snapshot: snap
-//           ? {
-//               gpa_semester: decimalToNumber(snap.gpa_semester),
-//               gpa_cumulative: decimalToNumber(snap.gpa_cumulative),
-//               credits_earned_semester: snap.credits_earned_semester,
-//               credits_failed_semester: snap.credits_failed_semester,
-//               failed_courses_count_semester: snap.failed_courses_count_semester,
-//               data_status: snap.data_status,
-//             }
-//           : {
-//               gpa_semester: null,
-//               gpa_cumulative: null,
-//               credits_earned_semester: 0,
-//               credits_failed_semester: 0,
-//               failed_courses_count_semester: 0,
-//               data_status: 'missing_data',
-//             },
-//         warnings_total: warnCountByStudent.get(sid) ?? 0,
-//       };
-//     });
-
-//     return {
-//       class: {
-//         id: idToString(cls.class_id),
-//         class_code: cls.class_code,
-//         class_name: cls.class_name,
-//         major_name: cls.major_name,
-//         cohort_year: cls.cohort_year,
-//       },
-//       semester: {
-//         id: idToString(semester.semester_id),
-//         semester_code: semester.semester_code,
-//         name: semester.name,
-//         start_date: semester.start_date,
-//         end_date: semester.end_date,
-//         is_current: semester.is_current,
-//       },
-//       summary: {
-//         students_total: totalStudents,
-//         avg_gpa_semester: gpaVals.length ? gpaVals.reduce((a, b) => a + b, 0) / gpaVals.length : null,
-//         warnings_total: warnsAll.length,
-//         warnings_by_status: warningsByStatus,
-//       },
-//       students: buildPaginationResponse(rows, totalStudents, p, l),
-//     };
-//   }
-
-//   // ================== WARNING RULES ==================
-//   async listActiveWarningRules() {
-//     const rules = await this.prisma.warning_rules.findMany({
-//       where: { is_active: true },
-//       orderBy: [{ level: 'asc' }, { rule_code: 'asc' }],
-//       select: {
-//         rule_id: true,
-//         rule_code: true,
-//         rule_name: true,
-//         description: true,
-//         condition_type: true,
-//         operator: true,
-//         threshold_value: true,
-//         level: true,
-//         is_active: true,
-//       },
-//     });
-
-//     return rules.map((r) => ({
-//       id: idToString(r.rule_id),
-//       rule_code: r.rule_code,
-//       rule_name: r.rule_name,
-//       description: r.description,
-//       condition_type: r.condition_type,
-//       operator: r.operator,
-//       threshold_value: decimalToNumber(r.threshold_value),
-//       level: r.level ?? null,
-//       is_active: r.is_active,
-//     }));
-//   }
-
-//   // ================== WARNINGS LIST ==================
-//   async listWarnings(
-//     advisorUserId: string,
-//     classId: string,
-//     semesterId?: string,
-//     status?: string,
-//     page?: any,
-//     limit?: any,
-//   ) {
-//     await this.assertAdvisorCanAccessClass(advisorUserId, classId);
-
-//     const semester = await this.resolveSemester(semesterId);
-
-//     const { page: p, limit: l } = parsePaginationQuery({
-//       page,
-//       limit,
-//       maxLimit: 100,
-//     });
-//     const skip = (p - 1) * l;
-
-//     const where: any = {
-//       class_id: toBigInt(classId),
-//       semester_id: semester.semester_id,
-//     };
-//     if (status) where.status = status as any;
-
-//     const [items, total] = await Promise.all([
-//       this.prisma.warnings.findMany({
-//         where,
-//         skip,
-//         take: l,
-//         orderBy: { created_at: 'desc' },
-//         select: {
-//           warning_id: true,
-//           student_id: true,
-//           rule_id: true,
-//           detected_value: true,
-//           reason_text: true,
-//           status: true,
-//           send_channel: true,
-//           send_status: true,
-//           send_error: true,
-//           sent_at: true,
-//           created_at: true,
-//           updated_at: true,
-//           students: { select: { student_code: true, full_name: true } },
-//           warning_rules: { select: { rule_code: true, rule_name: true, condition_type: true, operator: true, threshold_value: true } },
-//         },
-//       }),
-//       this.prisma.warnings.count({ where }),
-//     ]);
-
-//     const mapped = items.map((w) => ({
-//       id: idToString(w.warning_id),
-//       status: w.status,
-//       detected_value: decimalToNumber(w.detected_value),
-//       reason_text: w.reason_text,
-//       send: {
-//         channel: w.send_channel ?? null,
-//         status: w.send_status ?? null,
-//         error: w.send_error ?? null,
-//         sent_at: w.sent_at ?? null,
-//       },
-//       student: {
-//         id: idToString(w.student_id),
-//         student_code: w.students?.student_code ?? null,
-//         full_name: w.students?.full_name ?? null,
-//       },
-//       rule: {
-//         id: idToString(w.rule_id),
-//         rule_code: w.warning_rules?.rule_code ?? null,
-//         rule_name: w.warning_rules?.rule_name ?? null,
-//         condition_type: w.warning_rules?.condition_type ?? null,
-//         operator: w.warning_rules?.operator ?? null,
-//         threshold_value: w.warning_rules ? Number(w.warning_rules.threshold_value) : null,
-//       },
-//       created_at: w.created_at,
-//       updated_at: w.updated_at,
-//     }));
-
-//     return buildPaginationResponse(mapped, total, p, l);
-//   }
-
-//   // ================== PREVIEW WARNINGS (FR-08) ==================
-//   async previewWarnings(advisorUserId: string, dto: PreviewWarningsDto) {
-//     await this.assertAdvisorCanAccessClass(advisorUserId, dto.class_id);
-
-//     const classId = toBigInt(dto.class_id);
-//     const semester = await this.resolveSemester(dto.semester_id);
-
-//     const [students, rules] = await Promise.all([
-//       this.prisma.students.findMany({
-//         where: { class_id: classId },
-//         select: { student_id: true, student_code: true, full_name: true, academic_status: true },
-//         orderBy: { student_code: 'asc' },
-//       }),
-//       this.prisma.warning_rules.findMany({
-//         where: { is_active: true },
-//         orderBy: [{ level: 'asc' }, { rule_code: 'asc' }],
-//       }),
-//     ]);
-
-//     const studentIds = students.map((s) => s.student_id);
-
-//     const snaps = await this.prisma.gpa_snapshots.findMany({
-//       where: { class_id: classId, semester_id: semester.semester_id, student_id: { in: studentIds } },
-//       select: {
-//         student_id: true,
-//         gpa_semester: true,
-//         gpa_cumulative: true,
-//         failed_courses_count_semester: true,
-//         credits_earned_semester: true,
-//         credits_failed_semester: true,
-//         data_status: true,
-//       },
-//     });
-
-//     const snapMap = new Map<string, any>();
-//     for (const s of snaps) snapMap.set(idToString(s.student_id), s);
-
-//     const triggered: any[] = [];
-
-//     for (const st of students) {
-//       const sid = idToString(st.student_id);
-//       const snap = snapMap.get(sid);
-//       if (!snap || snap.data_status !== 'ok') continue;
-
-//       for (const rule of rules) {
-//         const th = Number(rule.threshold_value);
-//         let detected: number | null = null;
-
-//         switch (rule.condition_type) {
-//           case 'GPA_SEM':
-//             detected = decimalToNumber(snap.gpa_semester);
-//             break;
-//           case 'GPA_CUM':
-//             detected = decimalToNumber(snap.gpa_cumulative);
-//             break;
-//           case 'FAIL_COUNT':
-//             detected = Number(snap.failed_courses_count_semester ?? 0);
-//             break;
-//           case 'CREDITS_EARNED':
-//             detected = Number(snap.credits_earned_semester ?? 0);
-//             break;
-//           case 'CREDITS_FAILED':
-//             detected = Number(snap.credits_failed_semester ?? 0);
-//             break;
-//           default:
-//             detected = null;
-//         }
-
-//         if (detected === null) continue;
-//         if (!compare(rule.operator as Operator, detected, th)) continue;
-
-//         triggered.push({
-//           student: {
-//             id: sid,
-//             student_code: st.student_code,
-//             full_name: st.full_name,
-//             academic_status: st.academic_status,
-//           },
-//           rule: {
-//             id: idToString(rule.rule_id),
-//             rule_code: rule.rule_code,
-//             rule_name: rule.rule_name,
-//             condition_type: rule.condition_type,
-//             operator: rule.operator,
-//             threshold_value: Number(rule.threshold_value),
-//             level: rule.level ?? null,
-//           },
-//           detected_value: detected,
-//           reason_text: `[${rule.rule_code}] ${rule.rule_name}`,
-//         });
-//       }
-//     }
-
-//     return {
-//       class_id: dto.class_id,
-//       semester: { id: idToString(semester.semester_id), semester_code: semester.semester_code, name: semester.name },
-//       triggered_total: triggered.length,
-//       triggered,
-//     };
-//   }
-
-//   // ================== GENERATE WARNINGS (Draft/Sent) ==================
-//   async generateWarnings(advisorUserId: string, dto: GenerateWarningsDto) {
-//     if (dto.create_status === 'Sent' && !dto.send_channel) {
-//       throw new BadRequestException('create_status=Sent thì phải có send_channel');
-//     }
-
-//     const preview = await this.previewWarnings(advisorUserId, {
-//       class_id: dto.class_id,
-//       semester_id: dto.semester_id,
-//     });
-
-//     const advisorId = toBigInt(advisorUserId);
-//     const classId = toBigInt(dto.class_id);
-//     const semesterId = toBigInt(preview.semester.id);
-
-//     // audit
-//     await this.prisma.audit_logs.create({
-//       data: {
-//         user_id: advisorId,
-//         action: 'GENERATE_WARNING',
-//         object_type: 'class_semester',
-//         object_id: classId,
-//         details: {
-//           class_id: dto.class_id,
-//           semester_id: preview.semester.id,
-//           create_status: dto.create_status,
-//           send_channel: dto.send_channel ?? null,
-//           triggered_total: preview.triggered_total,
-//         } as any,
-//       },
-//     });
-
-//     const touched: any[] = [];
-
-//     for (const item of preview.triggered) {
-//       const studentId = toBigInt(item.student.id);
-//       const ruleId = toBigInt(item.rule.id);
-
-//       const w = await this.prisma.warnings.upsert({
-//         where: {
-//           student_id_semester_id_rule_id: {
-//             student_id: studentId,
-//             semester_id: semesterId,
-//             rule_id: ruleId,
-//           },
-//         },
-//         create: {
-//           student_id: studentId,
-//           class_id: classId,
-//           semester_id: semesterId,
-//           rule_id: ruleId,
-//           detected_value: item.detected_value,
-//           reason_text: item.reason_text,
-//           status: dto.create_status,
-//           send_channel: dto.create_status === 'Sent' ? (dto.send_channel as any) : null,
-//           created_by: advisorId,
-//         },
-//         update: {
-//           detected_value: item.detected_value,
-//           reason_text: item.reason_text,
-//           updated_at: new Date(),
-//           // nếu muốn: nếu đang Draft mà chọn Sent => set sang Sent
-//           ...(dto.create_status === 'Sent'
-//             ? { status: 'Sent' as any, send_channel: dto.send_channel as any }
-//             : {}),
-//         },
-//         select: { warning_id: true, status: true },
-//       });
-
-//       touched.push(w);
-//     }
-
-//     // nếu Sent => thực hiện send (demo)
-//     let sendResult: any = null;
-//     if (dto.create_status === 'Sent') {
-//       sendResult = await this.sendWarnings(advisorUserId, {
-//         warning_ids: touched.map((x) => idToString(x.warning_id)),
-//         channel: dto.send_channel!,
-//       });
-//     }
-
-//     return {
-//       message: dto.create_status === 'Draft' ? 'Đã tạo cảnh báo (Draft)' : 'Đã tạo & gửi cảnh báo',
-//       preview: { triggered_total: preview.triggered_total },
-//       warnings_total_touched: touched.length,
-//       sent: sendResult,
-//     };
-//   }
-
-//   // ================== SEND WARNINGS (demo sender) ==================
-//   async sendWarnings(advisorUserId: string, dto: SendWarningsDto) {
-//     const channel = (dto.channel ?? 'in_app') as any;
-
-//     const warnings = await this.prisma.warnings.findMany({
-//       where: { warning_id: { in: dto.warning_ids.map(toBigInt) } },
-//       select: { warning_id: true, class_id: true, status: true },
-//     });
-
-//     if (warnings.length !== dto.warning_ids.length) {
-//       throw new NotFoundException('Một số warning_id không tồn tại');
-//     }
-
-//     for (const w of warnings) {
-//       await this.assertAdvisorCanAccessClass(advisorUserId, String(w.class_id));
-//     }
-
-//     const now = new Date();
-//     const results: any[] = [];
-
-//     for (const w of warnings) {
-//       const canSend = w.status === 'Draft' || w.status === 'SendFailed' || w.status === 'Sent';
-//       if (!canSend) continue;
-
-//       try {
-//         // TODO: thay bằng mailer / in-app thật
-//         const ok = true;
-
-//         if (ok) {
-//           await this.prisma.warnings.update({
-//             where: { warning_id: w.warning_id },
-//             data: {
-//               status: 'Sent',
-//               send_channel: channel,
-//               send_status: 'sent',
-//               send_error: null,
-//               sent_at: now,
-//               updated_at: now,
-//             },
-//           });
-//           results.push({ warning_id: idToString(w.warning_id), status: 'sent' });
-//         }
-//       } catch (e: any) {
-//         await this.prisma.warnings.update({
-//           where: { warning_id: w.warning_id },
-//           data: {
-//             status: 'SendFailed',
-//             send_channel: channel,
-//             send_status: 'failed',
-//             send_error: String(e?.message ?? 'send failed'),
-//             updated_at: now,
-//           },
-//         });
-//         results.push({ warning_id: idToString(w.warning_id), status: 'failed' });
-//       }
-//     }
-
-//     await this.prisma.audit_logs.create({
-//       data: {
-//         user_id: toBigInt(advisorUserId),
-//         action: 'GENERATE_WARNING',
-//         object_type: 'send_warnings',
-//         object_id: null,
-//         details: { attempted: dto.warning_ids.length, channel, results } as any,
-//       },
-//     });
-
-//     return { attempted: dto.warning_ids.length, results };
-//   }
-
-//   // ================== UPDATE WARNING STATUS ==================
-//   async updateWarningStatus(advisorUserId: string, warningId: string, dto: UpdateWarningStatusDto) {
-//     const w = await this.prisma.warnings.findUnique({
-//       where: { warning_id: toBigInt(warningId) },
-//       select: { warning_id: true, class_id: true },
-//     });
-//     if (!w) throw new NotFoundException('Warning không tồn tại');
-
-//     await this.assertAdvisorCanAccessClass(advisorUserId, String(w.class_id));
-
-//     const updated = await this.prisma.warnings.update({
-//       where: { warning_id: w.warning_id },
-//       data: { status: dto.status as any, updated_at: new Date() },
-//       select: { warning_id: true, status: true, updated_at: true },
-//     });
-
-//     return {
-//       message: 'Cập nhật trạng thái cảnh báo thành công',
-//       warning: {
-//         id: idToString(updated.warning_id),
-//         status: updated.status,
-//         updated_at: updated.updated_at,
-//       },
-//     };
-//   }
-
-//   // ================== STUDENT DETAIL ==================
-//   async getStudentDetail(advisorUserId: string, studentId: string, dto: GetAdvisorStudentDetailDto) {
-//     await this.assertAdvisorCanAccessStudent(advisorUserId, studentId);
-
-//     const sid = toBigInt(studentId);
-//     const semester = await this.resolveSemester(dto.semester_id);
-
-//     const student = await this.prisma.students.findUnique({
-//       where: { student_id: sid },
-//       select: {
-//         student_id: true,
-//         student_code: true,
-//         full_name: true,
-//         email: true,
-//         phone: true,
-//         academic_status: true,
-//         class_id: true,
-//         classes: { select: { class_code: true, class_name: true, major_name: true, cohort_year: true } },
-//       },
-//     });
-//     if (!student) throw new NotFoundException('Sinh viên không tồn tại');
-
-//     const snapshot = await this.prisma.gpa_snapshots.findUnique({
-//       where: {
-//         student_id_semester_id: { student_id: sid, semester_id: semester.semester_id },
-//       },
-//     });
-
-//     const [warnings, notes] = await Promise.all([
-//       this.prisma.warnings.findMany({
-//         where: { student_id: sid, semester_id: semester.semester_id },
-//         orderBy: { created_at: 'desc' },
-//         select: {
-//           warning_id: true,
-//           status: true,
-//           detected_value: true,
-//           reason_text: true,
-//           sent_at: true,
-//           send_channel: true,
-//           send_status: true,
-//           send_error: true,
-//           warning_rules: { select: { rule_code: true, rule_name: true, condition_type: true, operator: true, threshold_value: true } },
-//         },
-//       }),
-//       this.prisma.advisory_notes.findMany({
-//         where: { student_id: sid },
-//         orderBy: { created_at: 'desc' },
-//         take: 30,
-//         select: {
-//           note_id: true,
-//           content: true,
-//           counseling_date: true,
-//           handling_status: true,
-//           warning_id: true,
-//           attachment_url: true,
-//           created_at: true,
-//           users: { select: { user_id: true, full_name: true } },
-//         },
-//       }),
-//     ]);
-
-//     const includeGrades = dto.include_grades ?? true;
-//     const grades = includeGrades
-//       ? await this.prisma.grades.findMany({
-//           where: { student_id: sid, semester_id: semester.semester_id },
-//           orderBy: [{ course_id: 'asc' }, { attempt_no: 'desc' }],
-//           select: {
-//             grade_id: true,
-//             attempt_no: true,
-//             score_10: true,
-//             letter_grade: true,
-//             score_4: true,
-//             is_pass: true,
-//             note: true,
-//             updated_at: true,
-//             courses: { select: { course_code: true, course_name: true, credits: true, course_type: true } },
-//           },
-//         })
-//       : [];
-
-//     return {
-//       student: {
-//         id: idToString(student.student_id),
-//         student_code: student.student_code,
-//         full_name: student.full_name,
-//         email: student.email ?? null,
-//         phone: student.phone ?? null,
-//         academic_status: student.academic_status,
-//         class: student.classes
-//           ? {
-//               id: idToString(student.class_id),
-//               class_code: student.classes.class_code,
-//               class_name: student.classes.class_name,
-//               major_name: student.classes.major_name,
-//               cohort_year: student.classes.cohort_year,
-//             }
-//           : null,
-//       },
-//       semester: {
-//         id: idToString(semester.semester_id),
-//         semester_code: semester.semester_code,
-//         name: semester.name,
-//       },
-//       snapshot: snapshot
-//         ? {
-//             gpa_semester: decimalToNumber(snapshot.gpa_semester),
-//             gpa_cumulative: decimalToNumber(snapshot.gpa_cumulative),
-//             credits_earned_semester: snapshot.credits_earned_semester,
-//             credits_failed_semester: snapshot.credits_failed_semester,
-//             failed_courses_count_semester: snapshot.failed_courses_count_semester,
-//             data_status: snapshot.data_status,
-//           }
-//         : {
-//             gpa_semester: null,
-//             gpa_cumulative: null,
-//             credits_earned_semester: 0,
-//             credits_failed_semester: 0,
-//             failed_courses_count_semester: 0,
-//             data_status: 'missing_data',
-//           },
-//       warnings: warnings.map((w) => ({
-//         id: idToString(w.warning_id),
-//         status: w.status,
-//         detected_value: decimalToNumber(w.detected_value),
-//         reason_text: w.reason_text,
-//         send: {
-//           channel: w.send_channel ?? null,
-//           status: w.send_status ?? null,
-//           error: w.send_error ?? null,
-//           sent_at: w.sent_at ?? null,
-//         },
-//         rule: w.warning_rules
-//           ? {
-//               rule_code: w.warning_rules.rule_code,
-//               rule_name: w.warning_rules.rule_name,
-//               condition_type: w.warning_rules.condition_type,
-//               operator: w.warning_rules.operator,
-//               threshold_value: Number(w.warning_rules.threshold_value),
-//             }
-//           : null,
-//       })),
-//       notes: notes.map((n) => ({
-//         id: idToString(n.note_id),
-//         content: n.content,
-//         counseling_date: n.counseling_date,
-//         handling_status: n.handling_status,
-//         warning_id: n.warning_id ? idToString(n.warning_id) : null,
-//         attachment_url: n.attachment_url ?? null,
-//         advisor: n.users ? { id: idToString(n.users.user_id), full_name: n.users.full_name } : null,
-//         created_at: n.created_at,
-//       })),
-//       grades: includeGrades
-//         ? grades.map((g) => ({
-//             id: idToString(g.grade_id),
-//             attempt_no: g.attempt_no,
-//             score_10: decimalToNumber(g.score_10),
-//             letter_grade: g.letter_grade,
-//             score_4: decimalToNumber(g.score_4),
-//             is_pass: g.is_pass,
-//             note: g.note,
-//             updated_at: g.updated_at,
-//             course: g.courses
-//               ? {
-//                   course_code: g.courses.course_code,
-//                   course_name: g.courses.course_name,
-//                   credits: g.courses.credits,
-//                   course_type: g.courses.course_type,
-//                 }
-//               : null,
-//           }))
-//         : null,
-//     };
-//   }
-
-//   // ================== NOTES ==================
-//   async createAdvisoryNote(advisorUserId: string, dto: CreateAdvisoryNoteDto) {
-//     await this.assertAdvisorCanAccessStudent(advisorUserId, dto.student_id);
-
-//     const student = await this.prisma.students.findUnique({
-//       where: { student_id: toBigInt(dto.student_id) },
-//       select: { class_id: true },
-//     });
-//     if (!student) throw new NotFoundException('Sinh viên không tồn tại');
-
-//     const note = await this.prisma.advisory_notes.create({
-//       data: {
-//         student_id: toBigInt(dto.student_id),
-//         class_id: student.class_id,
-//         advisor_user_id: toBigInt(advisorUserId),
-//         warning_id: dto.warning_id ? toBigInt(dto.warning_id) : null,
-//         content: dto.content,
-//         counseling_date: dto.counseling_date ? new Date(dto.counseling_date) : null,
-//         handling_status: (dto.handling_status as any) ?? 'not_contacted',
-//         attachment_url: dto.attachment_url ?? null,
-//       },
-//       select: {
-//         note_id: true,
-//         content: true,
-//         counseling_date: true,
-//         handling_status: true,
-//         attachment_url: true,
-//         warning_id: true,
-//         created_at: true,
-//       },
-//     });
-
-//     return {
-//       message: 'Tạo ghi chú tư vấn thành công',
-//       note: {
-//         id: idToString(note.note_id),
-//         content: note.content,
-//         counseling_date: note.counseling_date,
-//         handling_status: note.handling_status,
-//         attachment_url: note.attachment_url ?? null,
-//         warning_id: note.warning_id ? idToString(note.warning_id) : null,
-//         created_at: note.created_at,
-//       },
-//     };
-//   }
-
-//   async listNotesByStudent(advisorUserId: string, studentId: string) {
-//     await this.assertAdvisorCanAccessStudent(advisorUserId, studentId);
-
-//     const notes = await this.prisma.advisory_notes.findMany({
-//       where: { student_id: toBigInt(studentId) },
-//       orderBy: { created_at: 'desc' },
-//       take: 50,
-//       select: {
-//         note_id: true,
-//         content: true,
-//         counseling_date: true,
-//         handling_status: true,
-//         attachment_url: true,
-//         warning_id: true,
-//         created_at: true,
-//         users: { select: { user_id: true, full_name: true } },
-//       },
-//     });
-
-//     return notes.map((n) => ({
-//       id: idToString(n.note_id),
-//       content: n.content,
-//       counseling_date: n.counseling_date,
-//       handling_status: n.handling_status,
-//       attachment_url: n.attachment_url ?? null,
-//       warning_id: n.warning_id ? idToString(n.warning_id) : null,
-//       advisor: n.users ? { id: idToString(n.users.user_id), full_name: n.users.full_name } : null,
-//       created_at: n.created_at,
-//     }));
-//   }
-
-// }
-
-
 import {
   BadRequestException,
   ForbiddenException,
@@ -1031,88 +20,63 @@ import { UpdateWarningStatusDto } from './dto/update-warning-status.dto';
 import { CreateAdvisoryNoteDto } from './dto/create-advisory-note.dto';
 import { GetAdvisorStudentDetailDto } from './dto/get-advisor-student-detail.dto';
 
-// ====== DTO MỚI (bạn đã có theo gợi ý) ======
 import { BulkWarningStatusDto } from './dto/bulk-warning-status.dto';
-import { UpdateAdvisoryNoteDto } from 'src/advisor/dto/update-advisory-note.dto';
+import { UpdateAdvisoryNoteDto } from './dto/update-advisory-note.dto';
 
-function toBigInt(id: string | number | bigint): bigint {
-  if (typeof id === 'bigint') return id;
-  if (typeof id === 'number') return BigInt(id);
-  if (typeof id === 'string') return BigInt(id);
-  throw new Error('Invalid id');
-}
-function idToString(v: any): string {
-  if (typeof v === 'bigint') return v.toString();
-  if (typeof v === 'number') return String(v);
-  if (typeof v === 'string') return v;
-  return String(v ?? '');
-}
-function decimalToNumber(v: any): number | null {
-  if (v === null || v === undefined) return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-function startOfToday(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-type Operator = 'LT' | 'LTE' | 'GT' | 'GTE' | 'EQ' | 'NEQ';
-function compare(operator: Operator, value: number, threshold: number): boolean {
-  switch (operator) {
-    case 'LT':
-      return value < threshold;
-    case 'LTE':
-      return value <= threshold;
-    case 'GT':
-      return value > threshold;
-    case 'GTE':
-      return value >= threshold;
-    case 'EQ':
-      return value === threshold;
-    case 'NEQ':
-      return value !== threshold;
-    default:
-      return false;
-  }
-}
+import {
+  Operator,
+  compare,
+  decimalToNumber,
+  idToString,
+  startOfToday,
+  toBigIntOrThrow,
+} from './advisor.utils';
 
 @Injectable()
 export class AdvisorService {
-  prisma = new PrismaClient();
+  // Nếu dự án bạn đã có PrismaService (Nest pattern), hãy inject thay vì PrismaClient.
+  // Hiện mình giữ PrismaClient theo đúng code bạn đang dùng để khỏi vỡ cấu trúc.
+  private prisma = new PrismaClient();
 
-  // ====== ACCESS CHECK ======
+  // ===========================
+  // ACCESS CHECKS (CHỈ 1 BẢN)
+  // ===========================
   private async assertAdvisorCanAccessClass(advisorUserId: string, classId: string) {
     const today = startOfToday();
+
     const assignment = await this.prisma.class_advisor_assignments.findFirst({
       where: {
-        advisor_user_id: toBigInt(advisorUserId),
-        class_id: toBigInt(classId),
+        advisor_user_id: toBigIntOrThrow(advisorUserId, 'advisorUserId'),
+        class_id: toBigIntOrThrow(classId, 'classId'),
         from_date: { lte: today },
         OR: [{ to_date: null }, { to_date: { gte: today } }],
       },
       select: { assignment_id: true },
     });
 
-    if (!assignment) {
-      // nếu bạn muốn admin bypass ở service, có thể check req.user.role ở controller
-      throw new ForbiddenException('Bạn không có quyền truy cập lớp này');
-    }
+    if (!assignment) throw new ForbiddenException('Bạn không có quyền truy cập lớp này');
   }
 
   private async assertAdvisorCanAccessStudent(advisorUserId: string, studentId: string) {
     const st = await this.prisma.students.findUnique({
-      where: { student_id: toBigInt(studentId) },
-      select: { class_id: true },
+      where: { student_id: toBigIntOrThrow(studentId, 'studentId') },
+      select: {
+        student_id: true,
+        student_code: true,
+        full_name: true,
+        class_id: true,
+      },
     });
     if (!st) throw new NotFoundException('Sinh viên không tồn tại');
-    await this.assertAdvisorCanAccessClass(advisorUserId, String(st.class_id));
+
+    await this.assertAdvisorCanAccessClass(advisorUserId, idToString(st.class_id));
+    return st;
   }
 
   private async resolveSemester(semesterId?: string) {
     if (semesterId) {
       const s = await this.prisma.semesters.findUnique({
-        where: { semester_id: toBigInt(semesterId) },
+        where: { semester_id: toBigIntOrThrow(semesterId, 'semesterId') },
       });
       if (!s) throw new NotFoundException('Học kỳ không tồn tại');
       return s;
@@ -1137,7 +101,7 @@ export class AdvisorService {
 
     const assignments = await this.prisma.class_advisor_assignments.findMany({
       where: {
-        advisor_user_id: toBigInt(advisorUserId),
+        advisor_user_id: toBigIntOrThrow(advisorUserId, 'advisorUserId'),
         ...(dto.include_inactive
           ? {}
           : {
@@ -1211,7 +175,7 @@ export class AdvisorService {
   async getClassDashboard(advisorUserId: string, dto: GetAdvisorDashboardDto) {
     await this.assertAdvisorCanAccessClass(advisorUserId, dto.class_id);
 
-    const classId = toBigInt(dto.class_id);
+    const classId = toBigIntOrThrow(dto.class_id, 'class_id');
     const semester = await this.resolveSemester(dto.semester_id);
 
     const cls = await this.prisma.classes.findUnique({
@@ -1226,7 +190,6 @@ export class AdvisorService {
     });
     if (!cls) throw new NotFoundException('Lớp không tồn tại');
 
-    // pagination
     const { page: p, limit: l } = parsePaginationQuery({
       page: dto.page,
       limit: dto.limit,
@@ -1284,7 +247,7 @@ export class AdvisorService {
           semester_id: semester.semester_id,
           student_id: { in: studentIds },
         },
-        select: { student_id: true, status: true },
+        select: { student_id: true },
       }),
     ]);
 
@@ -1297,7 +260,6 @@ export class AdvisorService {
       warnCountByStudent.set(sid, (warnCountByStudent.get(sid) ?? 0) + 1);
     }
 
-    // summary toàn lớp
     const [snapsAll, warnsAll] = await Promise.all([
       this.prisma.gpa_snapshots.findMany({
         where: { class_id: classId, semester_id: semester.semester_id },
@@ -1315,8 +277,7 @@ export class AdvisorService {
       .filter((x): x is number => typeof x === 'number');
 
     const warningsByStatus: Record<string, number> = {};
-    for (const w of warnsAll)
-      warningsByStatus[w.status] = (warningsByStatus[w.status] ?? 0) + 1;
+    for (const w of warnsAll) warningsByStatus[w.status] = (warningsByStatus[w.status] ?? 0) + 1;
 
     const rows = students.map((st) => {
       const sid = idToString(st.student_id);
@@ -1418,7 +379,6 @@ export class AdvisorService {
     limit?: any,
   ) {
     await this.assertAdvisorCanAccessClass(advisorUserId, classId);
-
     const semester = await this.resolveSemester(semesterId);
 
     const { page: p, limit: l } = parsePaginationQuery({
@@ -1429,7 +389,7 @@ export class AdvisorService {
     const skip = (p - 1) * l;
 
     const where: any = {
-      class_id: toBigInt(classId),
+      class_id: toBigIntOrThrow(classId, 'class_id'),
       semester_id: semester.semester_id,
     };
     if (status) where.status = status as any;
@@ -1499,11 +459,11 @@ export class AdvisorService {
     return buildPaginationResponse(mapped, total, p, l);
   }
 
-  // ================== PREVIEW WARNINGS (FR-08) ==================
+  // ================== PREVIEW WARNINGS ==================
   async previewWarnings(advisorUserId: string, dto: PreviewWarningsDto) {
     await this.assertAdvisorCanAccessClass(advisorUserId, dto.class_id);
 
-    const classId = toBigInt(dto.class_id);
+    const classId = toBigIntOrThrow(dto.class_id, 'class_id');
     const semester = await this.resolveSemester(dto.semester_id);
 
     const [students, rules] = await Promise.all([
@@ -1613,7 +573,7 @@ export class AdvisorService {
     };
   }
 
-  // ================== GENERATE WARNINGS (Draft/Sent) ==================
+  // ================== GENERATE WARNINGS ==================
   async generateWarnings(advisorUserId: string, dto: GenerateWarningsDto) {
     if (dto.create_status === 'Sent' && !dto.send_channel) {
       throw new BadRequestException('create_status=Sent thì phải có send_channel');
@@ -1624,11 +584,10 @@ export class AdvisorService {
       semester_id: dto.semester_id,
     });
 
-    const advisorId = toBigInt(advisorUserId);
-    const classId = toBigInt(dto.class_id);
-    const semesterId = toBigInt(preview.semester.id);
+    const advisorId = toBigIntOrThrow(advisorUserId, 'advisorUserId');
+    const classId = toBigIntOrThrow(dto.class_id, 'class_id');
+    const semesterId = toBigIntOrThrow(preview.semester.id, 'semester_id');
 
-    // audit
     await this.prisma.audit_logs.create({
       data: {
         user_id: advisorId,
@@ -1645,11 +604,11 @@ export class AdvisorService {
       },
     });
 
-    const touched: any[] = [];
+    const touched: Array<{ warning_id: bigint; status: any }> = [];
 
     for (const item of preview.triggered) {
-      const studentId = toBigInt(item.student.id);
-      const ruleId = toBigInt(item.rule.id);
+      const studentId = toBigIntOrThrow(item.student.id, 'studentId');
+      const ruleId = toBigIntOrThrow(item.rule.id, 'ruleId');
 
       const w = await this.prisma.warnings.upsert({
         where: {
@@ -1667,8 +626,7 @@ export class AdvisorService {
           detected_value: item.detected_value,
           reason_text: item.reason_text,
           status: dto.create_status,
-          send_channel:
-            dto.create_status === 'Sent' ? (dto.send_channel as any) : null,
+          send_channel: dto.create_status === 'Sent' ? (dto.send_channel as any) : null,
           created_by: advisorId,
         },
         update: {
@@ -1685,7 +643,6 @@ export class AdvisorService {
       touched.push(w);
     }
 
-    // nếu Sent => thực hiện send (demo)
     let sendResult: any = null;
     if (dto.create_status === 'Sent') {
       sendResult = await this.sendWarnings(advisorUserId, {
@@ -1695,22 +652,19 @@ export class AdvisorService {
     }
 
     return {
-      message:
-        dto.create_status === 'Draft'
-          ? 'Đã tạo cảnh báo (Draft)'
-          : 'Đã tạo & gửi cảnh báo',
+      message: dto.create_status === 'Draft' ? 'Đã tạo cảnh báo (Draft)' : 'Đã tạo & gửi cảnh báo',
       preview: { triggered_total: preview.triggered_total },
       warnings_total_touched: touched.length,
       sent: sendResult,
     };
   }
 
-  // ================== SEND WARNINGS (demo sender) ==================
+  // ================== SEND WARNINGS (demo) ==================
   async sendWarnings(advisorUserId: string, dto: SendWarningsDto) {
     const channel = (dto.channel ?? 'in_app') as any;
 
     const warnings = await this.prisma.warnings.findMany({
-      where: { warning_id: { in: dto.warning_ids.map(toBigInt) } },
+      where: { warning_id: { in: dto.warning_ids.map((x) => toBigIntOrThrow(x, 'warning_id')) } },
       select: { warning_id: true, class_id: true, status: true },
     });
 
@@ -1719,20 +673,18 @@ export class AdvisorService {
     }
 
     for (const w of warnings) {
-      await this.assertAdvisorCanAccessClass(advisorUserId, String(w.class_id));
+      await this.assertAdvisorCanAccessClass(advisorUserId, idToString(w.class_id));
     }
 
     const now = new Date();
     const results: any[] = [];
 
     for (const w of warnings) {
-      const canSend =
-        w.status === 'Draft' || w.status === 'SendFailed' || w.status === 'Sent';
+      const canSend = w.status === 'Draft' || w.status === 'SendFailed' || w.status === 'Sent';
       if (!canSend) continue;
 
       try {
-        // TODO: thay bằng mailer / in-app thật
-        const ok = true;
+        const ok = true; // TODO: mailer/in-app thực
 
         if (ok) {
           await this.prisma.warnings.update({
@@ -1765,7 +717,7 @@ export class AdvisorService {
 
     await this.prisma.audit_logs.create({
       data: {
-        user_id: toBigInt(advisorUserId),
+        user_id: toBigIntOrThrow(advisorUserId, 'advisorUserId'),
         action: 'GENERATE_WARNING',
         object_type: 'send_warnings',
         object_id: null,
@@ -1777,18 +729,14 @@ export class AdvisorService {
   }
 
   // ================== UPDATE WARNING STATUS ==================
-  async updateWarningStatus(
-    advisorUserId: string,
-    warningId: string,
-    dto: UpdateWarningStatusDto,
-  ) {
+  async updateWarningStatus(advisorUserId: string, warningId: string, dto: UpdateWarningStatusDto) {
     const w = await this.prisma.warnings.findUnique({
-      where: { warning_id: toBigInt(warningId) },
+      where: { warning_id: toBigIntOrThrow(warningId, 'warningId') },
       select: { warning_id: true, class_id: true },
     });
     if (!w) throw new NotFoundException('Warning không tồn tại');
 
-    await this.assertAdvisorCanAccessClass(advisorUserId, String(w.class_id));
+    await this.assertAdvisorCanAccessClass(advisorUserId, idToString(w.class_id));
 
     const updated = await this.prisma.warnings.update({
       where: { warning_id: w.warning_id },
@@ -1807,14 +755,10 @@ export class AdvisorService {
   }
 
   // ================== STUDENT DETAIL ==================
-  async getStudentDetail(
-    advisorUserId: string,
-    studentId: string,
-    dto: GetAdvisorStudentDetailDto,
-  ) {
+  async getStudentDetail(advisorUserId: string, studentId: string, dto: GetAdvisorStudentDetailDto) {
     await this.assertAdvisorCanAccessStudent(advisorUserId, studentId);
 
-    const sid = toBigInt(studentId);
+    const sid = toBigIntOrThrow(studentId, 'studentId');
     const semester = await this.resolveSemester(dto.semester_id);
 
     const student = await this.prisma.students.findUnique({
@@ -1840,9 +784,7 @@ export class AdvisorService {
     if (!student) throw new NotFoundException('Sinh viên không tồn tại');
 
     const snapshot = await this.prisma.gpa_snapshots.findUnique({
-      where: {
-        student_id_semester_id: { student_id: sid, semester_id: semester.semester_id },
-      },
+      where: { student_id_semester_id: { student_id: sid, semester_id: semester.semester_id } },
     });
 
     const [warnings, notes] = await Promise.all([
@@ -2006,17 +948,17 @@ export class AdvisorService {
     await this.assertAdvisorCanAccessStudent(advisorUserId, dto.student_id);
 
     const student = await this.prisma.students.findUnique({
-      where: { student_id: toBigInt(dto.student_id) },
+      where: { student_id: toBigIntOrThrow(dto.student_id, 'student_id') },
       select: { class_id: true },
     });
     if (!student) throw new NotFoundException('Sinh viên không tồn tại');
 
     const note = await this.prisma.advisory_notes.create({
       data: {
-        student_id: toBigInt(dto.student_id),
+        student_id: toBigIntOrThrow(dto.student_id, 'student_id'),
         class_id: student.class_id,
-        advisor_user_id: toBigInt(advisorUserId),
-        warning_id: dto.warning_id ? toBigInt(dto.warning_id) : null,
+        advisor_user_id: toBigIntOrThrow(advisorUserId, 'advisorUserId'),
+        warning_id: dto.warning_id ? toBigIntOrThrow(dto.warning_id, 'warning_id') : null,
         content: dto.content,
         counseling_date: dto.counseling_date ? new Date(dto.counseling_date) : null,
         handling_status: (dto.handling_status as any) ?? 'not_contacted',
@@ -2051,7 +993,7 @@ export class AdvisorService {
     await this.assertAdvisorCanAccessStudent(advisorUserId, studentId);
 
     const notes = await this.prisma.advisory_notes.findMany({
-      where: { student_id: toBigInt(studentId) },
+      where: { student_id: toBigIntOrThrow(studentId, 'studentId') },
       orderBy: { created_at: 'desc' },
       take: 50,
       select: {
@@ -2078,15 +1020,10 @@ export class AdvisorService {
     }));
   }
 
-  // =================================================================
-  // ======================= CODE MỚI BẮT ĐẦU =========================
-  // (Không đụng vào code cũ phía trên)
-  // =================================================================
-
-  // ====== WARNING DETAIL ======
+  // ================== WARNING DETAIL ==================
   async getWarningDetail(advisorUserId: string, warningId: string) {
     const w = await this.prisma.warnings.findUnique({
-      where: { warning_id: toBigInt(warningId) },
+      where: { warning_id: toBigIntOrThrow(warningId, 'warningId') },
       select: {
         warning_id: true,
         class_id: true,
@@ -2106,29 +1043,14 @@ export class AdvisorService {
         acknowledged_by: true,
         resolved_at: true,
         resolved_by: true,
-        students: {
-          select: { student_code: true, full_name: true, email: true, phone: true },
-        },
-        classes: {
-          select: { class_code: true, class_name: true, major_name: true, cohort_year: true },
-        },
-        semesters: {
-          select: { semester_code: true, name: true, start_date: true, end_date: true, is_current: true },
-        },
-        warning_rules: {
-          select: { rule_code: true, rule_name: true, condition_type: true, operator: true, threshold_value: true, level: true },
-        },
+        students: { select: { student_code: true, full_name: true, email: true, phone: true } },
+        classes: { select: { class_code: true, class_name: true, major_name: true, cohort_year: true } },
+        semesters: { select: { semester_code: true, name: true, start_date: true, end_date: true, is_current: true } },
+        warning_rules: { select: { rule_code: true, rule_name: true, condition_type: true, operator: true, threshold_value: true, level: true } },
         warning_send_logs: {
           orderBy: { attempted_at: 'desc' },
           take: 50,
-          select: {
-            send_log_id: true,
-            channel: true,
-            status: true,
-            error: true,
-            attempted_at: true,
-            attempted_by: true,
-          },
+          select: { send_log_id: true, channel: true, status: true, error: true, attempted_at: true, attempted_by: true },
         },
         advisory_notes: {
           orderBy: { created_at: 'desc' },
@@ -2140,7 +1062,6 @@ export class AdvisorService {
             handling_status: true,
             attachment_url: true,
             created_at: true,
-            advisor_user_id: true,
             users: { select: { user_id: true, full_name: true } },
           },
         },
@@ -2148,7 +1069,7 @@ export class AdvisorService {
     });
 
     if (!w) throw new NotFoundException('Warning not found');
-    await this.assertAdvisorCanAccessClass(advisorUserId, String(w.class_id));
+    await this.assertAdvisorCanAccessClass(advisorUserId, idToString(w.class_id));
 
     return {
       id: idToString(w.warning_id),
@@ -2226,11 +1147,11 @@ export class AdvisorService {
     };
   }
 
-  // ====== STUDENT TIMELINE ======
+  // ================== STUDENT TIMELINE ==================
   async getStudentTimeline(advisorUserId: string, studentId: string, semesterId?: string) {
     await this.assertAdvisorCanAccessStudent(advisorUserId, studentId);
 
-    const sid = toBigInt(studentId);
+    const sid = toBigIntOrThrow(studentId, 'studentId');
     const focusSemester = await this.resolveSemester(semesterId);
 
     const student = await this.prisma.students.findUnique({
@@ -2369,11 +1290,11 @@ export class AdvisorService {
     };
   }
 
-  // ====== BULK UPDATE WARNING STATUS ======
+  // ================== BULK UPDATE WARNING STATUS ==================
   async bulkUpdateWarningStatus(advisorUserId: string, dto: BulkWarningStatusDto) {
     if (!dto.ids?.length) throw new BadRequestException('ids không được rỗng');
 
-    const ids = dto.ids.map(toBigInt);
+    const ids = dto.ids.map((x) => toBigIntOrThrow(x, 'warning_id'));
 
     const warnings = await this.prisma.warnings.findMany({
       where: { warning_id: { in: ids } },
@@ -2382,11 +1303,10 @@ export class AdvisorService {
 
     if (warnings.length === 0) return { updated: 0, skipped: dto.ids.length };
 
-    // lọc warning hợp lệ theo quyền lớp
     const allowed: bigint[] = [];
     for (const w of warnings) {
       try {
-        await this.assertAdvisorCanAccessClass(advisorUserId, String(w.class_id));
+        await this.assertAdvisorCanAccessClass(advisorUserId, idToString(w.class_id));
         allowed.push(w.warning_id);
       } catch {
         // skip
@@ -2398,7 +1318,7 @@ export class AdvisorService {
     const data: any = { status: dto.status as any, updated_at: new Date() };
     if (dto.status === 'Resolved') {
       data.resolved_at = new Date();
-      data.resolved_by = toBigInt(advisorUserId);
+      data.resolved_by = toBigIntOrThrow(advisorUserId, 'advisorUserId');
     }
 
     const res = await this.prisma.warnings.updateMany({
@@ -2412,15 +1332,15 @@ export class AdvisorService {
     };
   }
 
-  // ====== UPDATE NOTE ======
+  // ================== UPDATE NOTE ==================
   async updateAdvisoryNote(advisorUserId: string, noteId: string, dto: UpdateAdvisoryNoteDto) {
     const note = await this.prisma.advisory_notes.findUnique({
-      where: { note_id: toBigInt(noteId) },
+      where: { note_id: toBigIntOrThrow(noteId, 'noteId') },
       select: { note_id: true, class_id: true },
     });
     if (!note) throw new NotFoundException('Note không tồn tại');
 
-    await this.assertAdvisorCanAccessClass(advisorUserId, String(note.class_id));
+    await this.assertAdvisorCanAccessClass(advisorUserId, idToString(note.class_id));
 
     const updated = await this.prisma.advisory_notes.update({
       where: { note_id: note.note_id },
@@ -2455,25 +1375,25 @@ export class AdvisorService {
     };
   }
 
-  // ====== DELETE NOTE ======
+  // ================== DELETE NOTE ==================
   async deleteAdvisoryNote(advisorUserId: string, noteId: string) {
     const note = await this.prisma.advisory_notes.findUnique({
-      where: { note_id: toBigInt(noteId) },
+      where: { note_id: toBigIntOrThrow(noteId, 'noteId') },
       select: { note_id: true, class_id: true },
     });
     if (!note) throw new NotFoundException('Note không tồn tại');
 
-    await this.assertAdvisorCanAccessClass(advisorUserId, String(note.class_id));
-
+    await this.assertAdvisorCanAccessClass(advisorUserId, idToString(note.class_id));
     await this.prisma.advisory_notes.delete({ where: { note_id: note.note_id } });
+
     return { message: 'Xoá ghi chú thành công', deleted: true };
   }
 
-  // ====== CLASS ANALYTICS ======
+  // ================== CLASS ANALYTICS ==================
   async getClassAnalytics(advisorUserId: string, classId: string, semesterId?: string) {
     await this.assertAdvisorCanAccessClass(advisorUserId, classId);
 
-    const clsId = toBigInt(classId);
+    const clsId = toBigIntOrThrow(classId, 'class_id');
     const semester = await this.resolveSemester(semesterId);
 
     const [studentTotal, snaps, warnGroup] = await Promise.all([
@@ -2502,6 +1422,7 @@ export class AdvisorService {
       { key: '3.2-3.6', from: 3.2, to: 3.6 },
       { key: '>=3.6', from: 3.6, to: 999 },
     ];
+
     const dist: Record<string, number> = Object.fromEntries(bins.map((b) => [b.key, 0]));
     for (const g of gpas) {
       const b = bins.find((x) => g >= x.from && g < x.to);
@@ -2513,11 +1434,7 @@ export class AdvisorService {
 
     return {
       class_id: classId,
-      semester: {
-        id: idToString(semester.semester_id),
-        semester_code: semester.semester_code,
-        name: semester.name,
-      },
+      semester: { id: idToString(semester.semester_id), semester_code: semester.semester_code, name: semester.name },
       students_total: studentTotal,
       avg_gpa_semester: avgGpa,
       gpa_distribution: dist,
@@ -2525,16 +1442,21 @@ export class AdvisorService {
     };
   }
 
-  // ====== CLASS COURSE STATS ======
+  // ================== CLASS COURSE STATS ==================
   async getClassCourseStats(advisorUserId: string, classId: string, semesterId?: string) {
     await this.assertAdvisorCanAccessClass(advisorUserId, classId);
 
-    const clsId = toBigInt(classId);
+    const clsId = toBigIntOrThrow(classId, 'class_id');
     const semester = await this.resolveSemester(semesterId);
 
     const grades = await this.prisma.grades.findMany({
       where: { class_id: clsId, semester_id: semester.semester_id },
-      select: { course_id: true, is_pass: true, score_10: true, courses: { select: { course_code: true, course_name: true } } },
+      select: {
+        course_id: true,
+        is_pass: true,
+        score_10: true,
+        courses: { select: { course_code: true, course_name: true } },
+      },
     });
 
     const map = new Map<string, any>();
@@ -2556,6 +1478,7 @@ export class AdvisorService {
       it.total += 1;
       if (g.is_pass === true) it.pass += 1;
       if (g.is_pass === false) it.fail += 1;
+
       const s10 = decimalToNumber(g.score_10);
       if (typeof s10 === 'number') {
         it._sum += s10;
@@ -2578,5 +1501,168 @@ export class AdvisorService {
       semester: { id: idToString(semester.semester_id), semester_code: semester.semester_code, name: semester.name },
       items,
     };
+  }
+
+  // ================== COURSE PROGRESS ==================
+  async getStudentCourseProgress(advisorUserId: string, studentId: string, semesterNo?: number) {
+    const student = await this.assertAdvisorCanAccessStudent(advisorUserId, studentId);
+
+    const whereCurr: any = { class_id: student.class_id };
+    if (semesterNo != null) whereCurr.semester_no = semesterNo;
+
+    const curriculum = await this.prisma.curriculum_items.findMany({
+      where: whereCurr,
+      include: { courses: { select: { course_id: true, course_code: true, course_name: true, credits: true } } },
+      orderBy: [{ semester_no: 'asc' }, { course_id: 'asc' }],
+    });
+
+    const grades = await this.prisma.grades.findMany({
+      where: { student_id: toBigIntOrThrow(studentId, 'studentId') },
+      select: { course_id: true, semester_id: true, attempt_no: true, is_pass: true, score_10: true, score_4: true, letter_grade: true },
+    });
+
+    const attempted = new Set<string>();
+    const passed = new Set<string>();
+    const lastAttemptMap = new Map<string, any>();
+
+    for (const g of grades) {
+      const key = idToString(g.course_id);
+      attempted.add(key);
+      if (g.is_pass === true) passed.add(key);
+
+      const prev = lastAttemptMap.get(key);
+      if (!prev || (g.attempt_no ?? 1) >= (prev.attempt_no ?? 1)) lastAttemptMap.set(key, g);
+    }
+
+    const items = curriculum.map((ci) => {
+      const courseIdStr = idToString(ci.course_id);
+      let status: 'NOT_TAKEN' | 'PASSED' | 'FAILED' = 'NOT_TAKEN';
+      if (passed.has(courseIdStr)) status = 'PASSED';
+      else if (attempted.has(courseIdStr)) status = 'FAILED';
+
+      const last = lastAttemptMap.get(courseIdStr);
+
+      return {
+        semester_no: ci.semester_no,
+        is_required: ci.is_required,
+        course: ci.courses,
+        status,
+        last_attempt: last
+          ? {
+              attempt_no: last.attempt_no,
+              semester_id: idToString(last.semester_id),
+              score_10: decimalToNumber(last.score_10),
+              score_4: decimalToNumber(last.score_4),
+              letter_grade: last.letter_grade,
+              is_pass: last.is_pass,
+            }
+          : null,
+      };
+    });
+
+    return {
+      student: { student_id: idToString(student.student_id), student_code: student.student_code, full_name: student.full_name },
+      class_id: idToString(student.class_id),
+      items,
+    };
+  }
+
+  // ================== NEXT SEMESTER PLAN ==================
+  async getStudentNextSemesterPlan(advisorUserId: string, studentId: string, nextSemesterNo: number) {
+    const student = await this.assertAdvisorCanAccessStudent(advisorUserId, studentId);
+
+    const curriculumAll = await this.prisma.curriculum_items.findMany({
+      where: { class_id: student.class_id },
+      include: { courses: { select: { course_id: true, course_code: true, course_name: true, credits: true } } },
+    });
+
+    const grades = await this.prisma.grades.findMany({
+      where: { student_id: toBigIntOrThrow(studentId, 'studentId') },
+      select: { course_id: true, is_pass: true },
+    });
+
+    const passed = new Set<string>();
+    const attempted = new Set<string>();
+    for (const g of grades) {
+      const key = idToString(g.course_id);
+      attempted.add(key);
+      if (g.is_pass === true) passed.add(key);
+    }
+
+    const backlog = curriculumAll
+      .filter((ci) => attempted.has(idToString(ci.course_id)) && !passed.has(idToString(ci.course_id)))
+      .map((ci) => ({ course: ci.courses, reason: 'FAILED_BACKLOG' }));
+
+    const planned = curriculumAll
+      .filter((ci) => ci.semester_no === nextSemesterNo && !passed.has(idToString(ci.course_id)))
+      .map((ci) => ({
+        course: ci.courses,
+        reason: attempted.has(idToString(ci.course_id)) ? 'FAILED_BACKLOG' : 'CURRICULUM_NEXT',
+      }));
+
+    const mergedMap = new Map<string, any>();
+    for (const x of [...backlog, ...planned]) mergedMap.set(idToString(x.course.course_id), x);
+
+    return {
+      student: { student_id: idToString(student.student_id), student_code: student.student_code, full_name: student.full_name },
+      next_semester_no: nextSemesterNo,
+      courses_to_show: Array.from(mergedMap.values()),
+      rule: {
+        passed_not_shown: true,
+        failed_shown_until_pass: true,
+      },
+    };
+  }
+
+  // ================== CLASS RETAKE LIST ==================
+  async getClassRetakeList(advisorUserId: string, classId: string) {
+    await this.assertAdvisorCanAccessClass(advisorUserId, classId);
+
+    const clsId = toBigIntOrThrow(classId, 'class_id');
+
+    const students = await this.prisma.students.findMany({
+      where: { class_id: clsId },
+      select: { student_id: true, student_code: true, full_name: true },
+    });
+
+    const curriculum = await this.prisma.curriculum_items.findMany({
+      where: { class_id: clsId },
+      include: { courses: { select: { course_id: true, course_code: true, course_name: true, credits: true } } },
+    });
+
+    const curriculumCourseIds = new Set(curriculum.map((c) => idToString(c.course_id)));
+
+    const result: any[] = [];
+
+    // NOTE: N+1 query, ok cho demo. Nếu lớp lớn, nên tối ưu bằng query nhóm.
+    for (const s of students) {
+      const grades = await this.prisma.grades.findMany({
+        where: { student_id: s.student_id },
+        select: { course_id: true, is_pass: true },
+      });
+
+      const attempted = new Set<string>();
+      const passed = new Set<string>();
+
+      for (const g of grades) {
+        const k = idToString(g.course_id);
+        if (!curriculumCourseIds.has(k)) continue;
+        attempted.add(k);
+        if (g.is_pass === true) passed.add(k);
+      }
+
+      const failedCourses = curriculum
+        .filter((ci) => attempted.has(idToString(ci.course_id)) && !passed.has(idToString(ci.course_id)))
+        .map((ci) => ci.courses);
+
+      if (failedCourses.length) {
+        result.push({
+          student: { student_id: idToString(s.student_id), student_code: s.student_code, full_name: s.full_name },
+          failed_courses: failedCourses,
+        });
+      }
+    }
+
+    return { class_id: idToString(clsId), retake_students: result, count: result.length };
   }
 }

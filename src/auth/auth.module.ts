@@ -4,17 +4,19 @@ import { AuthController } from './auth.controller';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from 'src/auth/strategies/jwt.strategy';
+import { MailModule } from 'src/common/mail/mail.module';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
-  global: true,
-  secret: process.env.JWT_SECRET,
-})
+      global: true,
+      secret: process.env.JWT_SECRET,
+    }),
+    MailModule
   ],
   controllers: [AuthController],
-  providers: [AuthService,  JwtStrategy],
+  providers: [AuthService, JwtStrategy],
   exports: [JwtModule, PassportModule],
 })
 export class AuthModule {}

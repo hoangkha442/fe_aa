@@ -6,9 +6,12 @@ import { ConfigModule } from '@nestjs/config';
 import { AdvisorModule } from './advisor/advisor.module';
 import { SemestersModule } from './semesters/semesters.module';
 import { StudentModule } from './student/student.module';
+import { GradesModule } from './grades/grades.module';
+import { RecalculateModule } from './recalculate/recalculate.module';
+import { CurriculumModule } from './curriculum/curriculum.module';
 
 @Module({
-  imports: [ConfigModule.forRoot() ,AuthModule, AdvisorModule, SemestersModule, StudentModule],
+  imports: [ConfigModule.forRoot() ,AuthModule, AdvisorModule, SemestersModule, StudentModule, GradesModule, RecalculateModule, CurriculumModule],
   controllers: [AppController],
   providers: [AppService],
 })
