@@ -16,19 +16,18 @@ import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { Roles } from 'src/auth/roles/roles.decorator';
 import { RolesGuard } from 'src/auth/roles/roles.guard';
 
+
 import { GetAdvisorClassesDto } from './dto/get-advisor-classes.dto';
 import { GetAdvisorDashboardDto } from './dto/get-advisor-dashboard.dto';
 import { PreviewWarningsDto } from './dto/preview-warnings.dto';
 import { GenerateWarningsDto } from './dto/generate-warnings.dto';
 import { SendWarningsDto } from './dto/send-warnings.dto';
 import { UpdateWarningStatusDto } from './dto/update-warning-status.dto';
-import { CreateAdvisoryNoteDto } from './dto/create-advisory-note.dto';
-import { GetAdvisorStudentDetailDto } from './dto/get-advisor-student-detail.dto';
-
 import { BulkWarningStatusDto } from './dto/bulk-warning-status.dto';
+import { CreateAdvisoryNoteDto } from './dto/create-advisory-note.dto';
 import { UpdateAdvisoryNoteDto } from './dto/update-advisory-note.dto';
+import { GetAdvisorStudentDetailDto } from './dto/get-advisor-student-detail.dto';
 import { AdvisorService } from 'src/advisor/addvisor.service';
-
 
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -36,21 +35,21 @@ import { AdvisorService } from 'src/advisor/addvisor.service';
 export class AdvisorController {
   constructor(private readonly advisorService: AdvisorService) {}
 
-  // ================== CLASSES ==================
+  // ========== CLASSES ==========
   @Get('classes')
   @Roles('ADVISOR', 'ADMIN')
   async myClasses(@Req() req: any, @Query() dto: GetAdvisorClassesDto) {
     return this.advisorService.listMyClasses(req.user.userId, dto);
   }
 
-  // ================== SEMESTERS ==================
+  // ========== SEMESTERS ==========
   @Get('semesters')
   @Roles('ADVISOR', 'ADMIN')
   async listSemesters() {
     return this.advisorService.listSemesters();
   }
 
-  // ================== DASHBOARD ==================
+  // ========== DASHBOARD ==========
   @Get('dashboard')
   @Roles('ADVISOR', 'ADMIN')
   @ApiQuery({ name: 'class_id', required: true, type: String })
@@ -62,14 +61,14 @@ export class AdvisorController {
     return this.advisorService.getClassDashboard(req.user.userId, dto);
   }
 
-  // ================== WARNING RULES ==================
+  // ========== WARNING RULES ==========
   @Get('warning-rules')
   @Roles('ADVISOR', 'ADMIN')
   async listWarningRules() {
     return this.advisorService.listActiveWarningRules();
   }
 
-  // ================== WARNINGS ==================
+  // ========== WARNINGS ==========
   @Get('warnings')
   @Roles('ADVISOR', 'ADMIN')
   @ApiQuery({ name: 'class_id', required: true, type: String })
@@ -122,17 +121,7 @@ export class AdvisorController {
     @Param('id') warningId: string,
     @Body() dto: UpdateWarningStatusDto,
   ) {
-    return this.advisorService.updateWarningStatus(
-      req.user.userId,
-      warningId,
-      dto,
-    );
-  }
-
-  @Get('warnings/:id')
-  @Roles('ADVISOR', 'ADMIN')
-  async warningDetail(@Req() req: any, @Param('id') warningId: string) {
-    return this.advisorService.getWarningDetail(req.user.userId, warningId);
+    return this.advisorService.updateWarningStatus(req.user.userId, warningId, dto);
   }
 
   @Patch('warnings/bulk-status')
@@ -142,11 +131,18 @@ export class AdvisorController {
     return this.advisorService.bulkUpdateWarningStatus(req.user.userId, dto);
   }
 
-  // ================== STUDENTS ==================
+  @Get('warnings/:id')
+  @Roles('ADVISOR', 'ADMIN')
+  async warningDetail(@Req() req: any, @Param('id') warningId: string) {
+    return this.advisorService.getWarningDetail(req.user.userId, warningId);
+  }
+
+  // ========== STUDENTS ==========
   @Get('students/:id')
   @Roles('ADVISOR', 'ADMIN')
   @ApiQuery({ name: 'semester_id', required: false, type: String })
   @ApiQuery({ name: 'include_grades', required: false, type: Boolean, example: true })
+  @ApiQuery({ name: 'include_notes_all', required: false, type: Boolean, example: false })
   async studentDetail(
     @Req() req: any,
     @Param('id') studentId: string,
@@ -196,7 +192,7 @@ export class AdvisorController {
     );
   }
 
-  // ================== NOTES ==================
+  // ========== NOTES ==========
   @Post('notes')
   @Roles('ADVISOR', 'ADMIN')
   @ApiBody({ type: CreateAdvisoryNoteDto })
@@ -207,8 +203,13 @@ export class AdvisorController {
   @Get('notes')
   @Roles('ADVISOR', 'ADMIN')
   @ApiQuery({ name: 'student_id', required: true, type: String })
-  async listNotes(@Req() req: any, @Query('student_id') studentId: string) {
-    return this.advisorService.listNotesByStudent(req.user.userId, studentId);
+  @ApiQuery({ name: 'semester_id', required: false, type: String })
+  async listNotes(
+    @Req() req: any,
+    @Query('student_id') studentId: string,
+    @Query('semester_id') semesterId?: string,
+  ) {
+    return this.advisorService.listNotesByStudent(req.user.userId, studentId, semesterId);
   }
 
   @Patch('notes/:id')
@@ -228,7 +229,7 @@ export class AdvisorController {
     return this.advisorService.deleteAdvisoryNote(req.user.userId, noteId);
   }
 
-  // ================== CLASS ANALYTICS ==================
+  // ========== CLASS ANALYTICS ==========
   @Get('classes/:class_id/analytics')
   @Roles('ADVISOR', 'ADMIN')
   @ApiQuery({ name: 'semester_id', required: false, type: String })
@@ -256,7 +257,4 @@ export class AdvisorController {
   async classRetakeList(@Req() req: any, @Param('class_id') classId: string) {
     return this.advisorService.getClassRetakeList(req.user.userId, classId);
   }
-
-
-  
 }

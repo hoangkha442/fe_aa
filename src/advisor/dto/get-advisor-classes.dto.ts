@@ -1,9 +1,9 @@
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsBooleanString, IsOptional } from 'class-validator';
 
 export class GetAdvisorClassesDto {
+  @ApiPropertyOptional({ example: 'true', description: 'Include inactive assignments' })
   @IsOptional()
-  @IsBoolean()
-  @Transform(({ value }) => value === true || value === 'true')
-  include_inactive?: boolean;
+  @IsBooleanString()
+  include_inactive?: string;
 }

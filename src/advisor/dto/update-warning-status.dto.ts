@@ -1,6 +1,8 @@
-import { IsEnum } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsIn } from 'class-validator';
 
 export class UpdateWarningStatusDto {
-  @IsEnum(['Draft', 'Acknowledged', 'Resolved'] as any)
-  status!: 'Draft' | 'Acknowledged' | 'Resolved';
+  @ApiProperty({ enum: ['Draft', 'Sent', 'SendFailed', 'Resolved', 'Acknowledged'] })
+  @IsIn(['Draft', 'Sent', 'SendFailed', 'Resolved', 'Acknowledged'])
+  status!: 'Draft' | 'Sent' | 'SendFailed' | 'Resolved' | 'Acknowledged';
 }
